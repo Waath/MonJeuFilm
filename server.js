@@ -6,10 +6,7 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
-const PORT = process.env.PORT || 3000; // 3000 pour le développement local, PORT pour l'hébergeur
-server.listen(PORT, () => {
-    console.log(`Serveur démarré sur le port ${PORT}`);
-});
+const port = 3000;
 
 // ====================================================================
 // --- CONFIGURATION DES FILMS ET IMAGES (À PERSONNALISER) ---
