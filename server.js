@@ -768,21 +768,30 @@ function sendCurrentImageAndStartTimer() {
     }
 }
 
-// MODIFIÉE : Fonction pour passer à l'image suivante ou au film suivant
+// server.js
+
+// Assure-toi que timerInterval est bien déclaré en dehors de cette fonction,
+// par exemple en haut de ton fichier server.js :
+// let timerInterval; 
+
 function moveToNextImageOrRound() {
     const currentFilm = films[currentFilmIndex];
-
+    
     currentImageIndex++;
 
     // Si toutes les images du film actuel ont été montrées OU si le film a été trouvé
     if (currentImageIndex >= 5 || Object.values(players).every(p => p.foundFilmThisRound)) {
-        // ÉMETTRE L'ÉVÉNEMENT DE RÉVÉLATION
+        // *******************************************************************
+        // CORRECTION MAJEURE : Arrêter le minuteur immédiatement ici !
+        clearInterval(timerInterval); 
+        // *******************************************************************
+        
         io.emit('reveal film', currentFilm.titre);
-
+        
         // NOUVELLE LOGIQUE : NE PAS appeler moveToNextFilm() directement ici.
         // Le serveur attendra un signal de l'hôte ('request next film').
         console.log("Film révélé. En attente du signal de l'hôte pour passer au film suivant.");
-
+        
     } else {
         // Sinon, passer à la prochaine image du même film
         sendCurrentImageAndStartTimer();
