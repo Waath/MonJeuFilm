@@ -467,6 +467,7 @@ let currentRoundTimer; // Variable pour stocker l'intervalle du minuteur côté 
 // ... autres variables globales ...
 let timerInterval; // Déclaration globale du minuteur
 let currentTimer = 0; // Ajout pour suivre le temps restant, utile pour le reset
+let waitingForHostToAdvance = false; 
 const MAX_TIMER = 45; // Constante pour la durée du minuteur
 // ...
 const roundDuration = 45; // Durée d'une manche par image en secondes
@@ -597,13 +598,16 @@ socket.on('host next film', () => {
 });
 
 
-// NOUVEL AJOUT : Écouteur pour que l'hôte demande le film suivant
+// MODIFIÉ : Écouteur pour que l'hôte demande le film suivant
 socket.on('request next film', () => {
-    if (socket.id === hostId && gameStarted) {
+    // L'hôte peut demander le film suivant UNIQUEMENT si le jeu est démarré,
+    // c'est bien l'hôte, ET que le serveur est en attente d'avancement manuel.
+    if (socket.id === hostId && gameStarted && waitingForHostToAdvance) {
         console.log("Hôte a demandé le passage au film suivant. Progression du jeu.");
+        // Le drapeau sera réinitialisé à false par moveToNextFilm()
         moveToNextFilm(); // Déclenche le passage au film suivant
     } else {
-        console.log("Tentative de passer au film suivant par un non-hôte ou hors partie.");
+        console.log("Tentative de passer au film suivant par un non-hôte, hors partie, ou pas en attente d'avancement.");
     }
 });
 // MODIFIÉ : Gestion du bouton "Passer l'image" par l'hôte pour forcer l'avancement
@@ -806,32 +810,27 @@ function handleAnswerSubmission(socket, answer) {
     }
 }
 
-// server.js
-
-// Assure-toi que timerInterval est bien déclaré en dehors de cette fonction,
-// par exemple en haut de ton fichier server.js :
-// let timerInterval; 
-
+// MODIFIÉE : Fonction pour passer à l'image suivante ou au film suivant
 function moveToNextImageOrRound() {
     const currentFilm = films[currentFilmIndex];
-    
-    currentImageIndex++;
 
-    // Si toutes les images du film actuel ont été montrées OU si le film a été trouvé
-    if (currentImageIndex >= 5 || Object.values(players).every(p => p.foundFilmThisRound)) {
-        // *******************************************************************
-        // CORRECTION MAJEURE : Arrêter le minuteur immédiatement ici !
-        clearInterval(timerInterval); 
-        // *******************************************************************
-        
-        io.emit('reveal film', currentFilm.titre);
-        
-        // NOUVELLE LOGIQUE : NE PAS appeler moveToNextFilm() directement ici.
-        // Le serveur attendra un signal de l'hôte ('request next film').
-        console.log("Film révélé. En attente du signal de l'hôte pour passer au film suivant.");
-        
+    // *******************************************************************
+    // Toujours arrêter le minuteur dès que cette fonction est appelée pour gérer une fin de round
+    clearInterval(timerInterval); 
+    // *******************************************************************
+
+    // Vérifier si le film est terminé (trouvé ou toutes images passées)
+    if (Object.values(players).some(p => p.foundFilmThisRound) || currentImageIndex >= 5) {
+        // Si nous ne sommes PAS déjà en attente de l'hôte, alors c'est la première fois que le film est terminé
+        if (!waitingForHostToAdvance) { 
+            io.emit('reveal film', currentFilm.titre);
+            console.log("Film révélé. En attente du signal de l'hôte pour passer au film suivant.");
+            waitingForHostToAdvance = true; // Mettre le drapeau à vrai : on attend l'hôte
+        }
+        // Si on est déjà en attente, ne rien faire de plus (cela gère les appels multiples éventuels)
     } else {
-        // Sinon, passer à la prochaine image du même film
+        // Si le film n'est pas trouvé et qu'il reste des images (continuer à la prochaine image)
+        currentImageIndex++;
         sendCurrentImageAndStartTimer();
     }
 }
@@ -954,6 +953,9 @@ function moveToNextImageOrRound() {
 
 // MODIFIÉE : Fonction pour passer au film suivant (déclenchée par l'hôte)
 function moveToNextFilm() {
+    // Réinitialiser le drapeau, car un nouveau film commence
+    waitingForHostToAdvance = false; 
+
     // Réinitialiser les états des joueurs pour le nouveau film
     for (const id in players) {
         players[id].foundFilmThisRound = false;
