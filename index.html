@@ -520,7 +520,7 @@ button:disabled {
        
         <input type="text" id="answer-input" placeholder="Tape ta réponse ici">
         <button id="submit-button">Envoyer</button>
-        <button id="next-film-button" style="display: none; margin-top: 20px;">Passer au film suivant</button>
+        <button id="next-film-button" style="display: none; margin-top: 20px; background-color: var(--secondary-color); color: var(--dark-bg);">Passer au film suivant</button>
         <button id="skip-image-button" style="display: none; margin-top: 20px; background-color: #f44336; color: white;">Passer l'image</button>
     </div>
 
@@ -578,7 +578,7 @@ button:disabled {
         const feedbackMessageElement = document.getElementById('feedback-message');
         const playerList = document.getElementById('player-list');
         const startGameButton = document.getElementById('start-game-button');
-        const nextFilmButton = document.getElementById('next-film-button');
+        const nextFilmButton = document.getElementById('next-film-button'); // RÉINTRODUCTION
         const finalResultsContainer = document.getElementById('final-results-container');
         const hostLiveFeedback = document.getElementById('host-live-feedback');
         const skipImageButton = document.getElementById('skip-image-button'); // NOUVEAU
@@ -649,19 +649,25 @@ socket.on('reveal film', (filmTitle) => {
     submitButton.style.display = 'none';
     skipImageButton.style.display = 'none'; // Cacher le bouton "Passer l'image" aussi
 
-    // Cacher le message après quelques secondes (par exemple, 3 secondes)
     setTimeout(() => {
-        filmRevealMessage.style.opacity = 0; // Commencer le fondu
+        filmRevealMessage.style.opacity = 0;
         setTimeout(() => {
-            filmRevealMessage.style.display = 'none'; // Cacher complètement après la transition
-            answerInput.style.display = 'block'; // Réafficher le champ de réponse
-            submitButton.style.display = 'block'; // Réafficher le bouton d'envoi
-            if (isHost) { // Réafficher le bouton passer l'image si c'est l'hôte
-                skipImageButton.style.display = 'block';
+            filmRevealMessage.style.display = 'none';
+            // answerInput.disabled = false; // Ne pas réactiver ici, l'hôte doit cliquer
+            // submitButton.disabled = false; // Ne pas réactiver ici
+
+            // NOUVELLE LOGIQUE : Afficher le bouton "Passer au film suivant" si c'est l'hôte
+            if (isHost) {
+                nextFilmButton.style.display = 'block';
             }
+            // Le bouton "Passer l'image" ne doit être réactivé qu'au prochain film/image,
+            // quand sendCurrentImageAndStartTimer est appelé.
+            // Donc, ne pas le réafficher ici.
+
         }, 500); // Attendre la fin de la transition (0.5s)
     }, 3000); // Afficher pendant 3 secondes
 });
+
 
 // NOUVEL AJOUT : Écouteur pour le bouton "Passer l'image"
 skipImageButton.addEventListener('click', () => {
@@ -753,11 +759,12 @@ socket.on('live answer', (data) => {
 });
 
 
-        // Écouteur pour le nouveau bouton "Passer au film suivant"
+        // NOUVEL AJOUT : Écouteur pour le bouton "Passer au film suivant"
 nextFilmButton.addEventListener('click', () => {
-    if (isHost) { // S'assure que seul l'hôte peut cliquer
-        socket.emit('host next film'); // Envoie un signal au serveur
-        nextFilmButton.style.display = 'none'; // Cache le bouton immédiatement après le clic
+    if (isHost) {
+        console.log("Hôte a demandé de passer au film suivant.");
+        socket.emit('request next film');
+        nextFilmButton.style.display = 'none'; // Masquer le bouton après le clic
     }
 });
 
@@ -858,8 +865,14 @@ restartGameButton.addEventListener('click', () => {
             answerInput.disabled = false; // Réactive l'input
             submitButton.disabled = false; // Réactive le bouton
             answerInput.focus(); // Met le curseur dans le champ de réponse
-           nextFilmButton.style.display = 'none'; // NOUVEL AJOUT : Cache le bouton au début de chaque nouvelle image
-           // NOUVEL AJOUT : Cacher le message de feedback au début d'une nouvelle image
+           nextFilmButton.style.display = 'none';
+
+    // Réafficher le bouton "Passer l'image" si c'est l'hôte et que le jeu est en cours
+    if (isHost) { // Supposons que gameStarted est déjà géré ailleurs
+        skipImageButton.style.display = 'block'; 
+    }
+          
+    // NOUVEL AJOUT : Cacher le message de feedback au début d'une nouvelle image
     feedbackMessageElement.style.display = 'none';
     feedbackMessageElement.textContent = ''; 
 });

@@ -574,6 +574,8 @@ io.on('connection', (socket) => {
         }
     });
 
+
+    
     // NOUVEL AJOUT : Écoute l'événement 'host next film' envoyé par l'hôte
 socket.on('host next film', () => {
     // Seul l'hôte peut déclencher cela, et seulement si le jeu est en attente
@@ -589,6 +591,16 @@ socket.on('host next film', () => {
     }
 });
 
+
+// NOUVEL AJOUT : Écouteur pour que l'hôte demande le film suivant
+socket.on('request next film', () => {
+    if (socket.id === hostId && gameStarted) {
+        console.log("Hôte a demandé le passage au film suivant. Progression du jeu.");
+        moveToNextFilm(); // Déclenche le passage au film suivant
+    } else {
+        console.log("Tentative de passer au film suivant par un non-hôte ou hors partie.");
+    }
+});
 // MODIFIÉ : Gestion du bouton "Passer l'image" par l'hôte pour forcer l'avancement
 socket.on('skip current image', () => {
     if (socket.id === hostId && gameStarted) { // Vérifie que c'est bien l'hôte et que le jeu est en cours
@@ -756,19 +768,24 @@ function sendCurrentImageAndStartTimer() {
     }
 }
 
-// Passe à l'image suivante ou à la manche suivante
+// MODIFIÉE : Fonction pour passer à l'image suivante ou au film suivant
 function moveToNextImageOrRound() {
-    currentImageIndex++; // Incrémente l'index de l'image
+    const currentFilm = films[currentFilmIndex];
 
-    // Vérifie si on a encore des images pour le film actuel ET si tous les joueurs actifs n'ont pas encore trouvé
-    if (currentFilmIndex < films.length && currentImageIndex < films[currentFilmIndex].images.length && !allActivePlayersFound()) {
-        sendCurrentImageAndStartTimer(); // Continue avec l'image suivante du même film
+    currentImageIndex++;
+
+    // Si toutes les images du film actuel ont été montrées OU si le film a été trouvé
+    if (currentImageIndex >= 5 || Object.values(players).every(p => p.foundFilmThisRound)) {
+        // ÉMETTRE L'ÉVÉNEMENT DE RÉVÉLATION
+        io.emit('reveal film', currentFilm.titre);
+
+        // NOUVELLE LOGIQUE : NE PAS appeler moveToNextFilm() directement ici.
+        // Le serveur attendra un signal de l'hôte ('request next film').
+        console.log("Film révélé. En attente du signal de l'hôte pour passer au film suivant.");
+
     } else {
-        // Soit toutes les images du film ont été montrées, soit tous les joueurs ont trouvé le film.
-        console.log(`Fin de la manche pour le film "${films[currentFilmIndex].titre}".`);
-        currentFilmIndex++; // Passe au film suivant
-        // On donne un petit délai avant de passer à la manche suivante pour laisser le temps aux clients de voir la fin de manche/réponses
-        setTimeout(startNextRound, 3000); // Pause de 3 secondes avant la prochaine manche
+        // Sinon, passer à la prochaine image du même film
+        sendCurrentImageAndStartTimer();
     }
 }
 
