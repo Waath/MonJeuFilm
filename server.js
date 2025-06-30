@@ -464,6 +464,11 @@ let waitingForHostToAdvanceFilm = false; // Indique si le jeu attend que l'hôte
 let currentFilmIndex = 0; // Index du film actuel dans le tableau 'films'
 let currentImageIndex = 0; // Index de l'image actuelle pour le film en cours (de 0 à 4)
 let currentRoundTimer; // Variable pour stocker l'intervalle du minuteur côté serveur
+// ... autres variables globales ...
+let timerInterval; // Déclaration globale du minuteur
+let currentTimer = 0; // Ajout pour suivre le temps restant, utile pour le reset
+const MAX_TIMER = 45; // Constante pour la durée du minuteur
+// ...
 const roundDuration = 45; // Durée d'une manche par image en secondes
 const pointsPerImage = [5, 4, 3, 2, 1]; // Points gagnés pour la 1ère (la plus dure) à la 5ème (la plus facile) image
 
