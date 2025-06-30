@@ -457,21 +457,21 @@ const films = [
 // ====================================================================
 // --- Variables d'état du jeu (initialisation) ---
 // ====================================================================
-let players = {}; // { socket.id: { pseudo: "pseudo", score: 0, foundThisRound: false } }
+let players = {}; // { socket.id: { pseudo: "pseudo", score: 0, foundThisRound: false, foundFilmThisRound: false } }
 let hostId = null; // ID du socket de l'hôte (le premier connecté)
 let gameStarted = false; // Vrai si une partie est en cours
-let waitingForHostToAdvanceFilm = false; // Indique si le jeu attend que l'hôte passe au film suivant
+
+// --- VARIABLES D'ÉTAT UNIFIÉES ET CORRIGÉES ---
+let waitingForHostToAdvance = false; // Indique si le jeu attend que l'hôte passe au film suivant
 let currentFilmIndex = 0; // Index du film actuel dans le tableau 'films'
 let currentImageIndex = 0; // Index de l'image actuelle pour le film en cours (de 0 à 4)
-let currentRoundTimer; // Variable pour stocker l'intervalle du minuteur côté serveur
-// ... autres variables globales ...
-let timerInterval; // Déclaration globale du minuteur
-let currentTimer = 0; // Ajout pour suivre le temps restant, utile pour le reset
-let waitingForHostToAdvance = false; 
+let timerInterval; // Variable unique pour stocker l'intervalle du minuteur côté serveur
+let currentTimer = 0; // Temps restant actuel du minuteur
 const MAX_TIMER = 45; // Constante pour la durée du minuteur
-// ...
-const roundDuration = 45; // Durée d'une manche par image en secondes
+
+const roundDuration = 45; // Durée d'une manche par image en secondes (peut-être la même que MAX_TIMER)
 const pointsPerImage = [5, 4, 3, 2, 1]; // Points gagnés pour la 1ère (la plus dure) à la 5ème (la plus facile) image
+
 
 // Sert les fichiers statiques (ton HTML, CSS, JS frontend, et tes images !)
 app.use(express.static(path.join(__dirname, '/')));
@@ -488,91 +488,75 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
     console.log('Un utilisateur s\'est connecté : ' + socket.id);
 
-    // Si c'est le premier joueur à se connecter, il devient l'hôte
     if (hostId === null) {
         hostId = socket.id;
-        socket.emit('host connected'); // Informe le client qu'il est l'hôte
+        socket.emit('host connected');
         console.log(`Le joueur avec l'ID ${hostId} est maintenant l'hôte.`);
     }
 
-    // Envoie l'état initial du jeu aux nouveaux connectés (s'ils rejoignent en cours de partie)
     if (gameStarted) {
-        socket.emit('game started'); // Les informe que le jeu est en cours
-        if (films[currentFilmIndex]) { // S'assurer que le film existe
-            // Envoie l'image actuelle, le temps restant, et désactive l'input s'ils ont déjà trouvé
+        socket.emit('game started');
+        if (films[currentFilmIndex]) {
             socket.emit('display image', {
                 url: films[currentFilmIndex].images[currentImageIndex],
                 points: pointsPerImage[currentImageIndex],
-                initialTime: roundDuration // Pour que le client puisse synchroniser son minuteur
+                initialTime: currentTimer // Envoyer le temps restant exact
             });
-            // Il faudrait aussi envoyer les scores et le temps restant exact pour les late-joiners
-            io.emit('update scores', getPlayerScores()); // Met à jour les scores pour les late-joiners
+            io.emit('update scores', getPlayerScores());
         }
     }
 
-    // Met à jour la liste des joueurs pour TOUS les clients (nouveaux et existants)
-    // Cela se fait au début de chaque connexion et après chaque changement de joueur/pseudo
     io.emit('update player list', Object.values(players).map(p => p.pseudo));
     io.emit('update scores', getPlayerScores());
 
-
-    // Écoute quand un client envoie son pseudo
     socket.on('set pseudo', (pseudo) => {
-        // Validation du pseudo : non vide et non déjà pris
         if (pseudo && !Object.values(players).some(p => p.pseudo === pseudo)) {
-            // C'est ici que le joueur est initialisé avec la nouvelle propriété foundFilmThisRound
             players[socket.id] = { pseudo: pseudo, score: 0, foundThisRound: false, foundFilmThisRound: false };
-            socket.pseudo = pseudo; // Stocke le pseudo directement sur l'objet socket du client
+            socket.pseudo = pseudo;
             console.log(`Le joueur ${pseudo} (${socket.id}) s'est connecté au lobby.`);
-
-            socket.emit('pseudo accepted'); // Confirme au client que le pseudo est bon
-            io.emit('update player list', Object.values(players).map(p => p.pseudo)); // Met à jour la liste pour tous
-            io.emit('update scores', getPlayerScores()); // Met à jour les scores pour tous
+            socket.emit('pseudo accepted');
+            io.emit('update player list', Object.values(players).map(p => p.pseudo));
+            io.emit('update scores', getPlayerScores());
         } else {
-            // Rejeter le pseudo si vide ou déjà pris
             socket.emit('pseudo taken', 'Ce pseudo est déjà pris ou invalide. Veuillez en choisir un autre.');
             console.log(`Tentative de pseudo invalide ou déjà pris: "${pseudo}"`);
         }
     });
 
-    // Écoute quand un client se déconnecte
     socket.on('disconnect', () => {
-        if (socket.pseudo) { // S'assure que le pseudo existe
+        if (socket.pseudo) {
             console.log(`Le joueur ${socket.pseudo} (${socket.id}) s'est déconnecté.`);
-            delete players[socket.id]; // Supprime le joueur de la liste
+            delete players[socket.id];
 
-            // Si l'hôte actuel se déconnecte, on en désigne un nouveau
             if (socket.id === hostId) {
-                hostId = null; // L'ancien hôte est parti
-                if (Object.keys(players).length > 0) { // S'il reste d'autres joueurs
-                    hostId = Object.keys(players)[0]; // Le premier ID de socket restant devient le nouvel hôte
-                    io.to(hostId).emit('host connected'); // Informe le nouvel hôte
+                hostId = null;
+                if (Object.keys(players).length > 0) {
+                    hostId = Object.keys(players)[0];
+                    io.to(hostId).emit('host connected');
                     console.log(`L'ancien hôte s'est déconnecté. Le nouvel hôte est ${players[hostId].pseudo} (${hostId}).`);
                 } else {
                     console.log("Tous les joueurs se sont déconnectés. Il n'y a plus d'hôte.");
-                    // Si plus personne, on réinitialise l'état du jeu pour une prochaine partie
                     gameStarted = false;
                     currentFilmIndex = 0;
                     currentImageIndex = 0;
-                    clearInterval(currentRoundTimer); // Arrête le minuteur si en cours
+                    clearInterval(timerInterval); // Utiliser timerInterval
+                    waitingForHostToAdvance = false; // Réinitialiser le drapeau
                 }
             }
-            io.emit('update player list', Object.values(players).map(p => p.pseudo)); // Met à jour la liste pour tous
-            io.emit('update scores', getPlayerScores()); // Met à jour les scores pour tous
-            checkRoundEnd(); // Vérifie si tous les joueurs restants ont déjà trouvé/répondu
+            io.emit('update player list', Object.values(players).map(p => p.pseudo));
+            io.emit('update scores', getPlayerScores());
+            // Pas besoin de checkRoundEnd ici directement, la déconnexion d'un joueur ne devrait pas faire avancer le jeu
         } else {
             console.log('Un utilisateur anonyme s\'est déconnecté : ' + socket.id);
         }
     });
 
-    // Écoute l'événement 'start game' de l'hôte
     socket.on('start game', () => {
-        // Seul l'hôte peut lancer la partie, et seulement si elle n'est pas déjà lancée et qu'il y a des joueurs
         if (socket.id === hostId && !gameStarted && Object.keys(players).length > 0) {
             gameStarted = true;
-            io.emit('game started'); // Informe tous les clients que la partie commence
+            io.emit('game started');
             console.log("La partie a été lancée par l'hôte !");
-            startNextRound(); // Démarre la première manche
+            moveToNextFilm(); // Lance le premier film de la partie
         } else if (Object.keys(players).length === 0) {
             console.log("Impossible de lancer la partie, aucun joueur connecté.");
         } else if (gameStarted) {
@@ -580,137 +564,96 @@ io.on('connection', (socket) => {
         }
     });
 
-
-    
-    // NOUVEL AJOUT : Écoute l'événement 'host next film' envoyé par l'hôte
-socket.on('host next film', () => {
-    // Seul l'hôte peut déclencher cela, et seulement si le jeu est en attente
-    if (socket.id === hostId && waitingForHostToAdvanceFilm) {
-        waitingForHostToAdvanceFilm = false; // L'attente est terminée
-        currentFilmIndex++; // Passe à l'index du prochain film
-        console.log("L'hôte a demandé de passer au film suivant. Démarrage de la nouvelle manche.");
-        startNextRound(); // Démarre la nouvelle manche (qui affichera la 1ère image du nouveau film)
-    } else if (socket.id !== hostId) {
-        console.log(`Joueur ${socket.pseudo} a tenté de passer au film suivant sans être l'hôte.`);
-    } else if (!waitingForHostToAdvanceFilm) {
-        console.log(`L'hôte a tenté de passer au film suivant mais le jeu n'était pas en état d'attente.`);
-    }
-});
-
-
-// MODIFIÉ : Écouteur pour que l'hôte demande le film suivant
-socket.on('request next film', () => {
-    // L'hôte peut demander le film suivant UNIQUEMENT si le jeu est démarré,
-    // c'est bien l'hôte, ET que le serveur est en attente d'avancement manuel.
-    if (socket.id === hostId && gameStarted && waitingForHostToAdvance) {
-        console.log("Hôte a demandé le passage au film suivant. Progression du jeu.");
-        // Le drapeau sera réinitialisé à false par moveToNextFilm()
-        moveToNextFilm(); // Déclenche le passage au film suivant
-    } else {
-        console.log("Tentative de passer au film suivant par un non-hôte, hors partie, ou pas en attente d'avancement.");
-    }
-});
-// MODIFIÉ : Gestion du bouton "Passer l'image" par l'hôte pour forcer l'avancement
-socket.on('skip current image', () => {
-    if (socket.id === hostId && gameStarted) { // Vérifie que c'est bien l'hôte et que le jeu est en cours
-        console.log(`L'hôte (${players[hostId].pseudo}) a demandé de passer l'image actuelle.`);
-
-        // Arrête le minuteur immédiatement
-        clearInterval(currentRoundTimer);
-        io.emit('timer expired'); // Notifie les clients que le temps est écoulé (pour désactiver l'input etc.)
-
-        // *** C'EST LA PARTIE CRUCIALE : Appeler directement la fonction qui fait avancer le jeu ***
-        moveToNextImageOrRound(); 
-
-    } else {
-        console.log("Tentative de passer l'image par un non-hôte ou hors partie.");
-    }
-});
-
-// NOUVEL AJOUT : Écoute l'événement 'host restart game' de l'hôte
-socket.on('submit answer', (answer) => {
-    const player = players[socket.id];
-
-    // Le joueur ne peut pas répondre si le jeu n'est pas commencé, s'il n'a pas de pseudo,
-    // ou s'il a déjà trouvé le film durant cette manche.
-    if (gameStarted && player && !player.foundFilmThisRound) { // Utilisation directe de 'player' au lieu de 'players[socket.id]' après vérif
-        const currentFilm = films[currentFilmIndex]; // Récupère l'objet film entier
-        const currentFilmTitle = currentFilm.titre;
-        const currentFilmAlias = currentFilm.alias || []; // Récupère les alias, ou un tableau vide
-
-        // NOUVEL AJOUT : Envoyer la réponse à l'hôte pour le live feedback
-        // Assurez-vous que la variable `hostId` est bien définie dans votre server.js
-        if (hostId && hostId !== socket.id) { // N'envoie pas sa propre réponse à l'hôte s'il est aussi joueur
-            io.to(hostId).emit('live answer', {
-                pseudo: player.pseudo, // Utilise player.pseudo
-                answer: answer
-            });
-        }
-
-        // Normalise la réponse de l'utilisateur
-        // Ajout de la suppression de ponctuation et des caractères spéciaux
-        const normalizedUserAnswer = answer.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s]/g, '');
-
-        // Prépare toutes les réponses acceptées (titre principal + alias), toutes normalisées
-        const acceptedAnswers = [currentFilmTitle, ...currentFilmAlias].map(title =>
-            title.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s]/g, '')
-        );
-
-        let isCorrect = false;
-        // Vérifie si la réponse normalisée de l'utilisateur correspond à l'une des réponses acceptées
-        if (acceptedAnswers.includes(normalizedUserAnswer)) {
-            isCorrect = true;
-        }
-
-        if (isCorrect) {
-            const pointsEarned = pointsPerImage[currentImageIndex];
-            player.score += pointsEarned;
-            player.foundFilmThisRound = true; // Le joueur a trouvé le FILM pour cette manche
-            player.foundThisRound = true; // Marque aussi qu'il a répondu pour l'image actuelle (pour checkRoundEnd)
-
-            console.log(`${player.pseudo} a trouvé le film "${currentFilmTitle}" et gagne ${pointsEarned} points !`); // CORRIGÉ
-            io.to(socket.id).emit('answer result', { correct: true, message: `Bonne réponse ! Tu gagnes ${pointsEarned} points.` });
-            io.emit('update scores', getPlayerScores());
-
-            // Si un joueur trouve le film, on vérifie si tous les joueurs encore en jeu ont maintenant trouvé.
-            // Cela peut potentiellement faire avancer le jeu plus vite.
-            checkRoundEnd(); // Laisse checkRoundEnd gérer l'arrêt du timer et l'avancement
-
+    // --- Écouteur pour que l'hôte demande le film suivant (UNIFIÉ) ---
+    socket.on('request next film', () => {
+        if (socket.id === hostId && gameStarted && waitingForHostToAdvance) {
+            console.log("Hôte a demandé le passage au film suivant. Progression du jeu.");
+            moveToNextFilm(); // Déclenche le passage au film suivant
         } else {
-            console.log(`${player.pseudo} a répondu "${answer}" (incorrect).`); // CORRIGÉ
-            // Le joueur n'a qu'une seule chance par IMAGE, donc on le marque comme ayant tenté pour cette image.
-            player.foundThisRound = true; // Marque qu'il a répondu pour l'image actuelle
-
-            io.to(socket.id).emit('answer result', { correct: false, message: `Mauvaise réponse. Essaie encore avec la prochaine image !` });
-
-            checkRoundEnd(); // Vérifie si tous les joueurs ont maintenant soumis leur réponse pour cette image
+            console.log("Tentative de passer au film suivant par un non-hôte, hors partie, ou pas en attente d'avancement.");
         }
-    } else if (players[socket.id] && players[socket.id].foundFilmThisRound) {
-        // Informe le joueur qu'il a déjà trouvé le film
-        io.to(socket.id).emit('answer result', { correct: false, message: "Tu as déjà trouvé ce film. Attends la prochaine manche !" });
-    } else {
-        // Cas où le jeu n'est pas démarré ou joueur non valide
-        console.log("Tentative de réponse ignorée (jeu non démarré ou joueur non valide).");
-    }
-});
-// ATTENTION : S'il y a un autre '});' ici, il ferme probablement l'io.on('connection'). Ne le supprimez pas.
-// Normalement, vous avez un '});' après celui-ci pour la connexion socket.
-});
+    });
 
+    // --- Écouteur pour le bouton "Passer l'image" par l'hôte ---
+    socket.on('skip current image', () => {
+        if (socket.id === hostId && gameStarted) {
+            console.log(`L'hôte (${players[hostId].pseudo}) a demandé de passer l'image actuelle.`);
+            clearInterval(timerInterval); // Utiliser timerInterval
+            io.emit('timer expired'); // Notifie les clients que le temps est écoulé
+            moveToNextImageOrRound(); // Force le passage à la prochaine image ou révélation du film
+        } else {
+            console.log("Tentative de passer l'image par un non-hôte ou hors partie.");
+        }
+    });
 
+    // --- Gestion de la soumission de réponse ---
+    socket.on('submit answer', (answer) => {
+        const player = players[socket.id];
+
+        if (gameStarted && player && !player.foundFilmThisRound) {
+            const currentFilm = films[currentFilmIndex];
+            const currentFilmTitle = currentFilm.titre;
+            const currentFilmAlias = currentFilm.alias || [];
+
+            if (hostId && hostId !== socket.id) {
+                io.to(hostId).emit('live answer', {
+                    pseudo: player.pseudo,
+                    answer: answer
+                });
+            }
+
+            const normalizedUserAnswer = answer.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s]/g, '');
+            const acceptedAnswers = [currentFilmTitle, ...currentFilmAlias].map(title =>
+                title.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w\s]/g, '')
+            );
+
+            let isCorrect = false;
+            if (acceptedAnswers.includes(normalizedUserAnswer)) {
+                isCorrect = true;
+            }
+
+            if (isCorrect) {
+                const pointsEarned = pointsPerImage[currentImageIndex];
+                player.score += pointsEarned;
+                player.foundFilmThisRound = true; // Le joueur a trouvé le FILM pour cette manche
+                player.foundThisRound = true; // Marque qu'il a répondu pour l'image actuelle
+
+                console.log(`${player.pseudo} a trouvé le film "${currentFilmTitle}" et gagne ${pointsEarned} points !`);
+                io.to(socket.id).emit('answer result', { correct: true, message: `Bonne réponse ! Tu gagnes ${pointsEarned} points.` });
+                io.emit('update scores', getPlayerScores());
+
+                // Un joueur a trouvé le film, on va directement à la logique de révélation/attente
+                moveToNextImageOrRound();
+
+            } else {
+                console.log(`${player.pseudo} a répondu "${answer}" (incorrect).`);
+                player.foundThisRound = true; // Marque qu'il a répondu pour l'image actuelle
+
+                io.to(socket.id).emit('answer result', { correct: false, message: `Mauvaise réponse. Essaie encore avec la prochaine image !` });
+
+                // Vérifie si tous les joueurs ont répondu pour cette image.
+                // Si oui, on avance à la prochaine image ou au prochain film.
+                checkRoundEnd(); 
+            }
+        } else if (players[socket.id] && players[socket.id].foundFilmThisRound) {
+            io.to(socket.id).emit('answer result', { correct: false, message: "Tu as déjà trouvé ce film. Attends la prochaine manche !" });
+        } else {
+            console.log("Tentative de réponse ignorée (jeu non démarré ou joueur non valide).");
+        }
+    });
+}); // Fin de io.on('connection')
 
 // ====================================================================
 // --- Fonctions de logique du jeu (côté serveur) ---
 // ====================================================================
 
-// Retourne un tableau trié des joueurs avec leurs scores
 function getPlayerScores() {
     return Object.values(players)
         .map(p => ({ pseudo: p.pseudo, score: p.score }))
-        .sort((a, b) => b.score - a.score); // Trie du plus grand score au plus petit
+        .sort((a, b) => b.score - a.score);
 }
 
-// MODIFIÉE : Fonction pour démarrer/redémarrer le minuteur
+// --- FONCTION startTimer UNIFIÉE ET CORRIGÉE ---
 function startTimer() {
     clearInterval(timerInterval); // S'assurer qu'aucun minuteur précédent ne tourne
     currentTimer = MAX_TIMER; // Réinitialiser le temps
@@ -723,237 +666,88 @@ function startTimer() {
             console.log("Minuteur terminé. Vérification de la fin du round.");
             checkRoundEnd(); // Vérifier la fin du round
         }
-    }, 1000); // Chaque seconde
+    }, 1000);
 }
 
-// MODIFIÉE : Fonction startNextRound()
-function startNextRound() {
-    clearInterval(currentRoundTimer); // Arrête le minuteur précédent si actif
-
-    // Réinitialise l'état 'foundThisRound' pour tous les joueurs pour la NOUVELLE IMAGE.
-    // Réinitialise 'foundFilmThisRound' pour tous les joueurs UNIQUEMENT AU DÉBUT D'UN NOUVEAU FILM.
-    for (let id in players) {
-        players[id].foundThisRound = false; // Réinitialise pour chaque nouvelle image
-        // Si on passe à un NOUVEAU FILM, on réinitialise aussi foundFilmThisRound
-        if (currentImageIndex === 0) { // Cela indique le début d'une nouvelle manche de film
-             players[id].foundFilmThisRound = false;
-        }
-    }
-
-    if (currentFilmIndex < films.length) {
-        currentImageIndex = 0; // Toujours commencer par la première image du film pour une nouvelle manche
-        // Assurez-vous que foundFilmThisRound est réinitialisé ICI aussi,
-        // car startNextRound est appelée au début d'un nouveau film.
-        for (let id in players) {
-            players[id].foundFilmThisRound = false;
-        }
-        console.log(`Début de la manche avec le film : ${films[currentFilmIndex].titre}`);
-        sendCurrentImageAndStartTimer();
-    } else {
-        endGame();
-    }
-}
-
-// MODIFIÉE : Fonction sendCurrentImageAndStartTimer()
+// --- FONCTION sendCurrentImageAndStartTimer UNIFIÉE ET CORRIGÉE ---
 function sendCurrentImageAndStartTimer() {
+    // S'assurer qu'on réinitialise foundThisRound pour TOUS les joueurs pour la nouvelle image
+    // Sauf si le joueur a déjà trouvé le FILM pour cette manche
+    for (let id in players) {
+        if (!players[id].foundFilmThisRound) { // Si le joueur n'a PAS encore trouvé le FILM
+            players[id].foundThisRound = false; // Alors il peut répondre pour cette nouvelle image
+        }
+    }
+
     if (currentFilmIndex < films.length && currentImageIndex < films[currentFilmIndex].images.length) {
         const imageUrl = films[currentFilmIndex].images[currentImageIndex];
-        const points = pointsPerImage[currentImageIndex];
+        const points = pointsPerImage[currentImageIndex]; // Assurez-vous que pointsPerImage est bien défini
         console.log(`Affichage de l'image ${currentImageIndex + 1} (${points} points) pour "${films[currentFilmIndex].titre}"`);
 
-        // Réinitialiser 'foundThisRound' pour tous les joueurs à chaque nouvelle image,
-        // SAUF pour ceux qui ont déjà trouvé la bonne réponse pour ce FILM.
-        for (let id in players) {
-            // Un joueur ne peut plus répondre pour ce film s'il l'a déjà trouvé.
-            // On aura besoin d'une nouvelle propriété pour savoir si un joueur a VRAIMENT trouvé le film.
-            // Pour l'instant, on va réinitialiser foundThisRound pour TOUS,
-            // et on bloquera l'envoi de réponse si le joueur a déjà trouvé le film dans la manche.
-            players[id].foundThisRound = false; // Réinitialise pour toutes les images de la manche
-        }
-
-        io.emit('display image', { url: imageUrl, points: points, initialTime: roundDuration });
+        io.emit('display image', { url: imageUrl, points: points, initialTime: MAX_TIMER }); // Utilise MAX_TIMER pour la synchronisation client
         io.emit('reset input'); // Demande aux clients de réactiver leur input/bouton
 
-        let timeLeft = roundDuration;
-        io.emit('timer update', timeLeft);
+        startTimer(); // Lance le minuteur pour cette image
 
-        currentRoundTimer = setInterval(() => {
-            timeLeft--;
-            io.emit('timer update', timeLeft);
-
-            if (timeLeft <= 0) {
-                clearInterval(currentRoundTimer);
-                console.log(`Temps écoulé pour l'image ${currentImageIndex + 1} du film "${films[currentFilmIndex].titre}".`);
-                io.emit('timer expired');
-                moveToNextImageOrRound();
-            }
-        }, 1000);
     } else {
-        moveToNextImageOrRound();
-    }
-}
-
-// Exemple (vérifie ton implémentation)
-function handleAnswerSubmission(socket, answer) {
-    // ... (logique de vérification de réponse) ...
-    if (isCorrect) {
-        // ... (attribuer points) ...
-        players[socket.id].foundFilmThisRound = true; // Marquer que le joueur a trouvé
-        players[socket.id].foundThisRound = true; // Marquer aussi pour cette manche/image
-        io.to(socket.id).emit('answer result', { message: `Bonne réponse ! +${points} points.`, correct: true });
-
-        // Si le film est trouvé, appeler moveToNextImageOrRound pour révéler et attendre l'hôte
-        // C'est important que cette fonction gère l'arrêt du timer.
+        // Si toutes les images d'un film sont passées sans que le film soit trouvé,
+        // ou si l'index est invalide, on force la fin du film.
+        console.log("Toutes les images pour le film actuel ont été affichées ou index invalide. Passage à la révélation.");
         moveToNextImageOrRound(); 
-    } else {
-        // ... (réponse incorrecte) ...
     }
 }
 
-// MODIFIÉE : Fonction pour passer à l'image suivante ou au film suivant
+
+// --- FONCTION checkRoundEnd UNIFIÉE ET CORRIGÉE ---
+function checkRoundEnd() {
+    const activePlayersCount = Object.keys(players).length;
+    let playersWhoCanStillAnswer = 0;
+    
+    for (let id in players) {
+        if (!players[id].foundFilmThisRound && !players[id].foundThisRound) {
+            // Ce joueur peut encore répondre pour ce film OU pour cette image
+            playersWhoCanStillAnswer++;
+        }
+    }
+
+    // Si le minuteur est à 0 OU si tous les joueurs qui pouvaient répondre ont répondu
+    // On passe à la logique d'avancement
+    if (currentTimer <= 0 || playersWhoCanStillAnswer === 0) {
+        clearInterval(timerInterval); // S'assurer que le minuteur est arrêté
+        console.log("Fin de round détectée (timer expiré ou tous les joueurs ont répondu).");
+        moveToNextImageOrRound(); // Passe à l'image suivante ou à la révélation du film
+    }
+}
+
+// --- FONCTION moveToNextImageOrRound UNIFIÉE ET CORRIGÉE ---
 function moveToNextImageOrRound() {
     const currentFilm = films[currentFilmIndex];
 
-    // *******************************************************************
-    // Toujours arrêter le minuteur dès que cette fonction est appelée pour gérer une fin de round
+    // Arrêter le minuteur systématiquement dès qu'on entre dans cette fonction
+    // pour gérer la transition de fin d'image/film.
     clearInterval(timerInterval); 
-    // *******************************************************************
 
-    // Vérifier si le film est terminé (trouvé ou toutes images passées)
-    if (Object.values(players).some(p => p.foundFilmThisRound) || currentImageIndex >= 5) {
-        // Si nous ne sommes PAS déjà en attente de l'hôte, alors c'est la première fois que le film est terminé
-        if (!waitingForHostToAdvance) { 
+    // Vérifie si le film actuel est terminé (soit trouvé par un joueur, soit toutes les images ont été montrées)
+    const filmFinished = Object.values(players).some(p => p.foundFilmThisRound) || currentImageIndex >= 4; // index 4 pour la 5ème image
+
+    if (filmFinished) {
+        // Si le film est terminé, on va le révéler et attendre l'hôte
+        if (!waitingForHostToAdvance) { // S'assurer qu'on ne le fait qu'une fois
             io.emit('reveal film', currentFilm.titre);
             console.log("Film révélé. En attente du signal de l'hôte pour passer au film suivant.");
-            waitingForHostToAdvance = true; // Mettre le drapeau à vrai : on attend l'hôte
+            waitingForHostToAdvance = true; // Définir l'état d'attente de l'hôte
         }
-        // Si on est déjà en attente, ne rien faire de plus (cela gère les appels multiples éventuels)
+        // Si déjà en attente, ne rien faire.
     } else {
-        // Si le film n'est pas trouvé et qu'il reste des images (continuer à la prochaine image)
+        // Si le film n'est pas encore terminé, passer à l'image suivante
         currentImageIndex++;
         sendCurrentImageAndStartTimer();
     }
 }
 
-// Vérifie si tous les joueurs actifs ont soumis une réponse (correcte ou non)
-function checkRoundEnd() {
-    const activePlayersCount = Object.keys(players).length; // Nombre de joueurs connectés
-    let playersAnsweredThisRound = 0;
-
-    for (let id in players) {
-        if (players[id].foundThisRound) { // Ceux qui ont trouvé ou tenté ont 'foundThisRound' à true
-            playersAnsweredThisRound++;
-        }
-    }
-
-    // Si tous les joueurs (ou tous ceux qui restent) ont soumis une réponse, on passe à la suite.
-    if (playersAnsweredThisRound === activePlayersCount) {
-        clearInterval(currentRoundTimer); // Arrête le minuteur si tous ont répondu avant la fin
-        console.log("Tous les joueurs actifs ont soumis leur réponse ou trouvé le film. Passage à la suite.");
-        moveToNextImageOrRound(); // Passe à l'image suivante ou au film suivant
-    }
-
-     if (currentTimer <= 0) {
-        moveToNextImageOrRound();
-    }
-}
-
-// Ancienne version à remplacer :
-// function allActivePlayersFound() {
-//     if (!gameStarted || Object.keys(players).length === 0) {
-//         return false;
-//     }
-//     return Object.values(players).every(p => p.foundThisRound);
-// }
-
-// NOUVELLE VERSION de allActivePlayersFound()
-function allActivePlayersFound() {
-    // Vérifie si tous les joueurs CONNECÉTS ET DONT LE PSEUDO A ÉTÉ ACCEPTÉ ont trouvé le film
-    if (!gameStarted || Object.keys(players).length === 0) {
-        return false;
-    }
-    // Si tous les joueurs *qui sont encore en jeu* ont trouvé le film
-    // (c'est-à-dire que leur `foundThisRound` est vrai et qu'ils ont soumis une bonne réponse)
-    // Pour l'instant, on laisse la logique telle quelle pour allActivePlayersFound car elle est liée à checkRoundEnd
-    // et sera affinée par la modification de checkRoundEnd().
-    // On veut que moveToNextImageOrRound se déclenche si le temps est écoulé OU si TOUS les joueurs ont tenté (bon ou faux)
-    return Object.values(players).every(p => p.foundThisRound);
-}
-
-// ====================================================================
-// MODIFIÉE : Fonction pour vérifier si une manche doit se terminer
-function checkRoundEnd() {
-    const activePlayersCount = Object.keys(players).length; // Nombre de joueurs connectés
-    let playersAnsweredThisRound = 0; // Compte ceux qui ont soumis une réponse (correcte ou non)
-
-    for (let id in players) {
-        if (players[id].foundThisRound) {
-            playersAnsweredThisRound++;
-        }
-    }
-
-    // Si tous les joueurs actifs ont soumis une réponse (qu'elle soit juste ou fausse)
-    if (playersAnsweredThisRound === activePlayersCount) {
-        clearInterval(currentRoundTimer); // Arrête le minuteur
-        console.log("Tous les joueurs actifs ont soumis leur réponse ou trouvé le film. Passage à la suite.");
-        // Appel direct à moveToNextImageOrRound()
-        moveToNextImageOrRound();
-    }
-}
-
-
-// MODIFIÉE : Fonction pour passer à l'image suivante ou au film suivant
-function moveToNextImageOrRound() {
-    const currentFilm = films[currentFilmIndex];
-
-    // *******************************************************************
-    // CORRECTION MAJEURE : Arrêter le minuteur DÈS QUE cette fonction est appelée
-    // pour gérer une fin de round (que ce soit par timer ou par réponse trouvée).
-    clearInterval(timerInterval); 
-    // *******************************************************************
-
-    // Si le film a été trouvé par un joueur OU si toutes les images ont été montrées
-    if (Object.values(players).some(p => p.foundFilmThisRound) || currentImageIndex >= 5) {
-        io.emit('reveal film', currentFilm.titre);
-        console.log("Film révélé. En attente du signal de l'hôte pour passer au film suivant.");
-        // Ne rien faire d'autre ici. On attend le clic de l'hôte.
-    } else {
-        // Si le film n'est pas trouvé et qu'il reste des images
-        currentImageIndex++; // Incrémenter l'index de l'image
-        sendCurrentImageAndStartTimer(); // Passer à l'image suivante
-    }
-}
-
-// MODIFIÉE : Fonction pour passer à l'image suivante ou au film suivant
-function moveToNextImageOrRound() {
-    const currentFilm = films[currentFilmIndex];
-
-    // Incrémente l'index de l'image
-    currentImageIndex++;
-
-    // Si toutes les images du film actuel ont été montrées OU si le film a été trouvé
-    // (La logique de foundFilmThisRound est gérée par la soumission de réponse)
-    // ou si toutes les réponses ont été soumises/temps écoulé par checkRoundEnd()
-    if (currentImageIndex >= 5 || Object.values(players).every(p => p.foundFilmThisRound)) { // 5 images fixes
-        // Si le film est terminé (toutes images montrées ou trouvé)
-        // ÉMETTRE L'ÉVÉNEMENT DE RÉVÉLATION AVANT DE PASSER AU FILM SUIVANT
-        io.emit('reveal film', currentFilm.titre);
-
-        // Attendre un court instant avant de passer au film suivant,
-        // pour que les clients aient le temps d'afficher la révélation.
-        setTimeout(() => {
-            moveToNextFilm(); // Passe au film suivant après la révélation
-        }, 3500); // Attendre 3.5 secondes (3s d'affichage + 0.5s de transition fondu)
-
-    } else {
-        // Sinon, passer à la prochaine image du même film
-        sendCurrentImageAndStartTimer();
-    }
-}
-
-// MODIFIÉE : Fonction pour passer au film suivant (déclenchée par l'hôte)
+// --- FONCTION moveToNextFilm UNIFIÉE ET CORRIGÉE ---
 function moveToNextFilm() {
-    // Réinitialiser le drapeau, car un nouveau film commence
+    // Réinitialiser le drapeau d'attente car on passe à un nouveau film
     waitingForHostToAdvance = false; 
 
     // Réinitialiser les états des joueurs pour le nouveau film
@@ -966,37 +760,31 @@ function moveToNextFilm() {
     currentFilmIndex++; // Passer au film suivant
 
     if (currentFilmIndex < films.length) {
-        // S'il y a d'autres films, commencer la prochaine manche
+        console.log(`Démarrage du film suivant : ${films[currentFilmIndex].titre}`);
         sendCurrentImageAndStartTimer(); // Commence le nouveau film avec sa première image
     } else {
-        // Si tous les films ont été joués, la partie est terminée
-        gameStarted = false;
-        io.emit('game over', getPlayerScores());
-        console.log("Tous les films ont été joués. Partie terminée.");
+        // Tous les films ont été joués, la partie est terminée
+        endGame();
     }
 }
 
-
-// MODIFIÉE : Fonction endGame()
+// --- FONCTION endGame UNIFIÉE ET CORRIGÉE ---
 function endGame() {
     gameStarted = false;
-    clearInterval(currentRoundTimer);
+    clearInterval(timerInterval); // Utiliser timerInterval
+    waitingForHostToAdvance = false; // Réinitialiser l'état d'attente
+
     console.log("La partie est terminée ! Voici les scores finaux :");
     const finalScores = getPlayerScores();
     console.log(finalScores);
-    io.emit('game over', finalScores); // Envoie les scores finaux aux clients
+    io.emit('game over', finalScores);
 
-    // Masque le bouton "Passer au film suivant" pour l'hôte
-    if (hostId) {
-        io.to(hostId).emit('hide next film button');
-    }
+    // Si tu avais un bouton spécifique pour l'hôte à cacher, assure-toi que le client le gère
+    // io.to(hostId).emit('hide next film button'); // Si cette émission est nécessaire
 
-    // NE PAS réinitialiser hostId et players ICI, car ils doivent être conservés
-    // pour que l'hôte puisse relancer et que les pseudos soient maintenus.
-    // La réinitialisation se fera si l'hôte clique sur "Rejouer".
-    currentFilmIndex = 0; // Réinitialise pour une potentielle nouvelle partie
+    currentFilmIndex = 0;
     currentImageIndex = 0;
-    waitingForHostToAdvanceFilm = false; // Réinitialise cet état
+    // Ne pas réinitialiser players et hostId ici pour permettre le rejouer avec les mêmes joueurs.
 }
 
 // ====================================================================
