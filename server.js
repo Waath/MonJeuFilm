@@ -706,6 +706,22 @@ function getPlayerScores() {
         .sort((a, b) => b.score - a.score); // Trie du plus grand score au plus petit
 }
 
+// MODIFIÉE : Fonction pour démarrer/redémarrer le minuteur
+function startTimer() {
+    clearInterval(timerInterval); // S'assurer qu'aucun minuteur précédent ne tourne
+    currentTimer = MAX_TIMER; // Réinitialiser le temps
+    io.emit('timer update', currentTimer); // Envoyer la première valeur du timer
+    timerInterval = setInterval(() => {
+        currentTimer--;
+        io.emit('timer update', currentTimer);
+        if (currentTimer <= 0) {
+            clearInterval(timerInterval); // Arrêter le minuteur quand il atteint 0
+            console.log("Minuteur terminé. Vérification de la fin du round.");
+            checkRoundEnd(); // Vérifier la fin du round
+        }
+    }, 1000); // Chaque seconde
+}
+
 // MODIFIÉE : Fonction startNextRound()
 function startNextRound() {
     clearInterval(currentRoundTimer); // Arrête le minuteur précédent si actif
@@ -773,6 +789,23 @@ function sendCurrentImageAndStartTimer() {
     }
 }
 
+// Exemple (vérifie ton implémentation)
+function handleAnswerSubmission(socket, answer) {
+    // ... (logique de vérification de réponse) ...
+    if (isCorrect) {
+        // ... (attribuer points) ...
+        players[socket.id].foundFilmThisRound = true; // Marquer que le joueur a trouvé
+        players[socket.id].foundThisRound = true; // Marquer aussi pour cette manche/image
+        io.to(socket.id).emit('answer result', { message: `Bonne réponse ! +${points} points.`, correct: true });
+
+        // Si le film est trouvé, appeler moveToNextImageOrRound pour révéler et attendre l'hôte
+        // C'est important que cette fonction gère l'arrêt du timer.
+        moveToNextImageOrRound(); 
+    } else {
+        // ... (réponse incorrecte) ...
+    }
+}
+
 // server.js
 
 // Assure-toi que timerInterval est bien déclaré en dehors de cette fonction,
@@ -820,6 +853,10 @@ function checkRoundEnd() {
         console.log("Tous les joueurs actifs ont soumis leur réponse ou trouvé le film. Passage à la suite.");
         moveToNextImageOrRound(); // Passe à l'image suivante ou au film suivant
     }
+
+     if (currentTimer <= 0) {
+        moveToNextImageOrRound();
+    }
 }
 
 // Ancienne version à remplacer :
@@ -866,38 +903,25 @@ function checkRoundEnd() {
 }
 
 
-// ====================================================================
-// MODIFIÉE : Fonction moveToNextImageOrRound()
+// MODIFIÉE : Fonction pour passer à l'image suivante ou au film suivant
 function moveToNextImageOrRound() {
-    // Incrémente l'index de l'image pour la prochaine image à afficher
-    currentImageIndex++;
+    const currentFilm = films[currentFilmIndex];
 
-    // Vérifie s'il reste des images POUR LE FILM ACTUEL
-    if (currentImageIndex < films[currentFilmIndex].images.length) {
-        // Il reste des images pour ce film, on affiche la prochaine
-        console.log(`Passage à l'image ${currentImageIndex + 1} du film "${films[currentFilmIndex].titre}".`);
-        sendCurrentImageAndStartTimer(); // Envoie la nouvelle image et relance le minuteur
+    // *******************************************************************
+    // CORRECTION MAJEURE : Arrêter le minuteur DÈS QUE cette fonction est appelée
+    // pour gérer une fin de round (que ce soit par timer ou par réponse trouvée).
+    clearInterval(timerInterval); 
+    // *******************************************************************
+
+    // Si le film a été trouvé par un joueur OU si toutes les images ont été montrées
+    if (Object.values(players).some(p => p.foundFilmThisRound) || currentImageIndex >= 5) {
+        io.emit('reveal film', currentFilm.titre);
+        console.log("Film révélé. En attente du signal de l'hôte pour passer au film suivant.");
+        // Ne rien faire d'autre ici. On attend le clic de l'hôte.
     } else {
-        // Toutes les 5 images de ce film ont été montrées
-        console.log(`Fin des images pour le film "${films[currentFilmIndex].titre}".`);
-
-        // Vérifie s'il reste d'autres films à jouer
-        if (currentFilmIndex >= films.length - 1) { // Si c'était le DERNIER film
-            endGame(); // Le jeu est terminé
-        } else {
-            // Il y a encore des films à jouer, mais on attend l'hôte pour passer au suivant
-            waitingForHostToAdvanceFilm = true; // Met le jeu en état d'attente
-
-            // Informe tous les clients que cette manche de film est finie
-            // (peut-être pour afficher un message "Manche terminée, attente hôte...")
-            io.emit('round ended, waiting for host'); 
-
-            // Spécifiquement, informe l'hôte d'afficher son bouton
-            if (hostId) { // S'assurer qu'un hôte est défini
-                io.to(hostId).emit('show next film button');
-            }
-            console.log("Toutes les images du film actuel ont été montrées. En attente de l'hôte pour passer au film suivant.");
-        }
+        // Si le film n'est pas trouvé et qu'il reste des images
+        currentImageIndex++; // Incrémenter l'index de l'image
+        sendCurrentImageAndStartTimer(); // Passer à l'image suivante
     }
 }
 
@@ -928,12 +952,12 @@ function moveToNextImageOrRound() {
     }
 }
 
-// MODIFIÉE : Fonction pour passer au film suivant
+// MODIFIÉE : Fonction pour passer au film suivant (déclenchée par l'hôte)
 function moveToNextFilm() {
     // Réinitialiser les états des joueurs pour le nouveau film
     for (const id in players) {
         players[id].foundFilmThisRound = false;
-        players[id].foundThisRound = false; // Réinitialiser aussi pour les tentatives précédentes
+        players[id].foundThisRound = false; 
     }
 
     currentImageIndex = 0; // Réinitialiser l'index de l'image pour le nouveau film
