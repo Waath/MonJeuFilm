@@ -630,23 +630,23 @@ button:disabled {
         pseudoInput.addEventListener('keypress', handlePseudoKeyPress);
     }
 
-    function showGame() {
-        lobbyContainer.style.display = 'none';
-        gameContainer.style.display = 'block';
-        filmRevealMessage.style.display = 'none';
-        gameOverScreen.style.display = 'none';
-        gameMessages.style.display = 'none'; // Cache les messages
-        if (isHost) {
-            startGameButton.style.display = 'none';
-            skipImageButton.style.display = 'block';
-            hostLiveFeedback.style.display = 'block';
-        } else {
-            skipImageButton.style.display = 'none';
-            hostLiveFeedback.style.display = 'none';
-        }
-        answerInput.style.display = 'inline-block'; // Assure que l'input et le bouton sont visibles
-        submitButton.style.display = 'inline-block';
-    }
+   function showGame() {
+    lobbyContainer.style.display = 'none';
+    gameContainer.style.display = 'block';
+    filmRevealMessage.style.display = 'none';
+    gameOverScreen.style.display = 'none';
+    gameMessages.style.display = 'none';
+
+    // Assurez-vous que l'image est affichée mais transparente initialement
+    filmImage.style.display = 'block'; // <--- Assurez-vous que cette ligne est bien là
+    filmImage.style.opacity = '0'; // L'opacité sera gérée par 'display image'
+
+    // Cacher les boutons de réponse et de film suivant au démarrage du jeu
+    answerInput.style.display = 'inline-block'; // Afficher l'input de réponse
+    submitButton.style.display = 'inline-block'; // Afficher le bouton soumettre
+    nextFilmButton.style.display = 'none'; // Cacher le bouton 'Film Suivant'
+    skipImageButton.style.display = 'inline-block'; // Afficher le bouton 'Passer image' (si nécessaire)
+}
 
     function showFilmReveal(title) {
         gameContainer.style.display = 'none'; // Cache l'interface de jeu principale
@@ -799,37 +799,29 @@ button:disabled {
     });
 
     socket.on('display image', (data) => {
-        showGame();
-        filmImage.src = data.url;
-        pointsDisplay.textContent = `Points: ${data.points}`; // Met à jour les points
-        
-        answerInput.value = '';
-        answerInput.disabled = false;
-        submitButton.disabled = false;
-        answerInput.focus();
+    console.log(`Réception de l'image : ${data.url}, Temps : ${data.initialTime}, Points : ${data.points}`);
+    // Assurez-vous que l'image est visible (mais transparente au début de la transition)
+    filmImage.style.display = 'block'; // <--- Ajoutez ou assurez-vous de cette ligne ici
+    filmImage.style.opacity = '0'; // Cache l'image pendant le changement
 
-        filmRevealMessage.style.display = 'none'; // Cacher si c'était visible
-        nextFilmButton.style.display = 'none'; // Cacher le bouton "Next Film"
+    filmImage.src = data.url; // Met à jour la source de l'image
+    timerDisplay.textContent = `Temps restant : ${data.initialTime}s`;
+    pointsDisplay.textContent = `Points par bonne réponse : ${data.points}`;
+    feedbackMessage.textContent = ''; // Efface les messages précédents
 
-        if (isHost) {
-            skipImageButton.style.display = 'block';
-        } else {
-            skipImageButton.style.display = 'none';
-        }
-        
-        clearInterval(timerIntervalClient);
-        currentTimerClient = data.initialTime;
-        timerDisplay.textContent = `${currentTimerClient}`;
-        timerIntervalClient = setInterval(() => {
-            currentTimerClient--;
-            if (currentTimerClient >= 0) {
-                timerDisplay.textContent = `${currentTimerClient}`;
-            }
-            if (currentTimerClient <= 0) {
-                clearInterval(timerIntervalClient);
-            }
-        }, 1000);
-    });
+    // Réinitialiser les boutons après un changement d'image
+    answerInput.style.display = 'inline-block'; // Afficher l'input de réponse
+    submitButton.style.display = 'inline-block'; // Afficher le bouton soumettre
+    nextFilmButton.style.display = 'none'; // Cacher le bouton 'Film Suivant'
+    skipImageButton.style.display = 'inline-block'; // Afficher le bouton 'Passer image' (si nécessaire)
+
+    // Animation de fondu :
+    // Un petit délai pour s'assurer que le navigateur a mis à jour le src
+    // avant de démarrer la transition d'opacité.
+    setTimeout(() => {
+        filmImage.style.opacity = '1'; // Rend l'image visible
+    }, 50); // Petite latence pour l'opacité
+});
 
     socket.on('timer update', (timeLeft) => {
         timerDisplay.textContent = `${timeLeft}`;
@@ -873,16 +865,28 @@ button:disabled {
         }
     });
 
-    socket.on('reveal film', (filmTitle) => {
-        showFilmReveal(filmTitle);
+    socket.on('reveal film', (data) => {
+    console.log(`Le film était : ${data.revealedTitle}`);
+    console.log(`Scores des joueurs :`, data.scores);
+    filmImage.style.opacity = '0'; // Cache l'image
+    // Après un court délai, cacher l'image complètement et afficher le message
+    setTimeout(() => {
+        filmImage.style.display = 'none'; // Cache l'image complètement
+        revealedFilmTitle.textContent = data.revealedTitle; // Affiche le titre
+        filmRevealMessage.style.opacity = '1';
+        filmRevealMessage.style.display = 'block'; // Affiche le message de révélation
+        // Masquer les boutons de réponse et le champ de texte
+        answerInput.style.display = 'none';
+        submitButton.style.display = 'none';
+        skipImageButton.style.display = 'none'; // Cacher le bouton 'Passer image'
+
+        // Afficher le bouton "Film suivant" seulement pour l'hôte après révélation
         if (isHost) {
             nextFilmButton.style.display = 'block';
         }
-        hasFoundFilmThisRound = false;
-        answerInput.style.display = 'none'; // Cacher l'input et le bouton pendant la révélation
-        submitButton.style.display = 'none';
-        skipImageButton.style.display = 'none'; // Cacher le bouton "Passer l'image"
-    });
+    }, 500); // Délai avant de cacher l'image et d'afficher le message de révélation
+    // ...
+});
 
     socket.on('game over', (finalScores) => {
         showGameOver(finalScores);
