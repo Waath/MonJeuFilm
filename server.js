@@ -13,6 +13,28 @@ const port = 3000;
 // ====================================================================
 // Assurez-vous que les chemins d'accès aux images sont corrects
 // et que les titres des films sont en MAJUSCULES pour faciliter la comparaison des réponses.
+
+
+// ====================================================================
+// --- Variables d'état du jeu (initialisation) ---
+// ====================================================================
+let players = {}; // { socket.id: { pseudo: "pseudo", score: 0, foundThisRound: false, foundFilmThisRound: false } }
+let hostId = null; // ID du socket de l'hôte (le premier connecté)
+let gameStarted = false; // Vrai si une partie est en cours
+
+// --- VARIABLES D'ÉTAT UNIFIÉES ET CORRIGÉES ---
+let waitingForHostToAdvance = false; // Indique si le jeu attend que l'hôte passe au film suivant
+let currentFilmIndex = 0; // Index du film actuel dans le tableau 'films'
+let currentImageIndex = 0; // Index de l'image actuelle pour le film en cours (de 0 à 4)
+let timerInterval; // Variable unique pour stocker l'intervalle du minuteur côté serveur
+let currentTimer = 0; // Temps restant actuel du minuteur
+const MAX_TIMER = 45; // Constante pour la durée du minuteur
+
+const roundDuration = 45; // Durée d'une manche par image en secondes (peut-être la même que MAX_TIMER)
+const pointsPerImage = [5, 4, 3, 2, 1]; // Points gagnés pour la 1ère (la plus dure) à la 5ème (la plus facile) image
+
+// --- FILMS (Assurez-vous que votre tableau 'films' est bien défini ici ou importé) ---
+// Exemple (ajustez avec votre vrai contenu):
 const films = [
     {
         titre: "ANYONE BUT YOU", // Titre en MAJUSCULES pour la comparaison
@@ -427,7 +449,7 @@ const films = [
         images: [
             "images/Games15_1.png", 
             "images/Games15_2.png",
-            "images/Games15_3.png",
+            "images/Games15_3.png", 
             "images/Games15_4.jpg",
             "images/Games15_5.png"
         ]
@@ -453,25 +475,6 @@ const films = [
     // AJOUTEZ VOS AUTRES FILMS ICI EN SUIVANT LE MÊME FORMAT.
     // Chaque film doit avoir un 'titre' en MAJUSCULES et un tableau 'images' de 5 chemins.
 ];
-
-// ====================================================================
-// --- Variables d'état du jeu (initialisation) ---
-// ====================================================================
-let players = {}; // { socket.id: { pseudo: "pseudo", score: 0, foundThisRound: false, foundFilmThisRound: false } }
-let hostId = null; // ID du socket de l'hôte (le premier connecté)
-let gameStarted = false; // Vrai si une partie est en cours
-
-// --- VARIABLES D'ÉTAT UNIFIÉES ET CORRIGÉES ---
-let waitingForHostToAdvance = false; // Indique si le jeu attend que l'hôte passe au film suivant
-let currentFilmIndex = 0; // Index du film actuel dans le tableau 'films'
-let currentImageIndex = 0; // Index de l'image actuelle pour le film en cours (de 0 à 4)
-let timerInterval; // Variable unique pour stocker l'intervalle du minuteur côté serveur
-let currentTimer = 0; // Temps restant actuel du minuteur
-const MAX_TIMER = 45; // Constante pour la durée du minuteur
-
-const roundDuration = 45; // Durée d'une manche par image en secondes (peut-être la même que MAX_TIMER)
-const pointsPerImage = [5, 4, 3, 2, 1]; // Points gagnés pour la 1ère (la plus dure) à la 5ème (la plus facile) image
-
 
 // Sert les fichiers statiques (ton HTML, CSS, JS frontend, et tes images !)
 app.use(express.static(path.join(__dirname, '/')));
