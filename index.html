@@ -639,6 +639,7 @@ button:disabled {
 
     // Assurez-vous que l'image est affichée mais transparente initialement
     filmImage.style.display = 'block'; // <--- Assurez-vous que cette ligne est bien là
+    console.log("DEBUG: Dans showGame(), filmImage.style.display mis à 'block'"); // NOUVEAU LOG
     filmImage.style.opacity = '0'; // L'opacité sera gérée par 'display image'
 
     // Cacher les boutons de réponse et de film suivant au démarrage du jeu
@@ -799,9 +800,11 @@ button:disabled {
     });
 
     socket.on('display image', (data) => {
-    console.log(`Réception de l'image : ${data.url}, Temps : ${data.initialTime}, Points : ${data.points}`);
+    console.log(`DEBUG: Réception 'display image', URL: ${data.url}`); // NOUVEAU LOG
+
     // Assurez-vous que l'image est visible (mais transparente au début de la transition)
     filmImage.style.display = 'block'; // <--- Ajoutez ou assurez-vous de cette ligne ici
+    console.log("DEBUG: Dans 'display image', filmImage.style.display mis à 'block'"); // NOUVEAU LOG
     filmImage.style.opacity = '0'; // Cache l'image pendant le changement
 
     filmImage.src = data.url; // Met à jour la source de l'image
@@ -866,12 +869,14 @@ button:disabled {
     });
 
     socket.on('reveal film', (data) => {
+    console.log(`DEBUG: Réception 'reveal film', titre révélé: ${data.revealedTitle}`); // NOUVEAU LOG    
     console.log(`Le film était : ${data.revealedTitle}`);
     console.log(`Scores des joueurs :`, data.scores);
     filmImage.style.opacity = '0'; // Cache l'image
     // Après un court délai, cacher l'image complètement et afficher le message
     setTimeout(() => {
         filmImage.style.display = 'none'; // Cache l'image complètement
+        console.log("DEBUG: Dans 'reveal film', filmImage.style.display mis à 'none'"); // NOUVEAU LOG
         revealedFilmTitle.textContent = data.revealedTitle; // Affiche le titre
         filmRevealMessage.style.opacity = '1';
         filmRevealMessage.style.display = 'block'; // Affiche le message de révélation
