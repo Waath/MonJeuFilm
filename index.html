@@ -472,505 +472,388 @@ button:disabled {
     </style>
 </head>
 <body>
-    
-    
-    <div id="lobby-container" class="active">
-        <h1>Rejoins la partie !</h1>
-        <div id="lobby-input-area">
-            <input type="text" id="pseudo-input" placeholder="Choisis ton pseudo">
-            <button id="join-lobby-button">Rejoindre</button>
+    <div class="container" id="lobby-container">
+        <h1>Bienvenue au Jeu des Images !</h1>
+        <p>Entrez votre pseudo :</p>
+        <input type="text" id="pseudo-input" placeholder="Votre pseudo">
+        <button id="set-pseudo-button">Définir Pseudo</button>
+
+        <div id="room-controls">
+            <button id="create-room-button">Créer une salle</button>
+            <input type="text" id="room-input" placeholder="Code de la salle">
+            <button id="join-room-button">Rejoindre une salle</button>
         </div>
-        <h2>Joueurs connectés :</h2>
-        <ul id="player-list">
-            </ul>
-        <button id="start-game-button" style="display: none;">Lancer la partie</button>
+
+        <p id="room-code-display"></p>
+        <ul id="player-list"></ul>
+        <p id="host-message" style="display: none;">En tant qu'hôte, vous pouvez démarrer la partie.</p>
+        <button id="start-game-button" style="display: none;">Démarrer la partie</button>
     </div>
 
-    <div id="game-container">
-        <h1>D'ou vient cette image</h1>
+    <div class="container" id="game-container">
+        <div id="game-info">
+            <span id="timer-display">Temps restant : 0s</span>
+            <span id="points-display">Points par bonne réponse : 0</span>
+        </div>
         <img id="film-image" src="https://via.placeholder.com/400x250?text=Attente+Image" alt="Image du film" oncontextmenu="return false;" draggable="false">
-        <p id="points-display">Points: --</p> <p class="timer-display">Minuteur: <span id="timer">30</span>s</p>
+        <div id="game-messages">
+            <p id="feedback-message"></p>
+        </div>
+        <input type="text" id="answer-input" placeholder="Votre réponse">
+        <div id="game-actions">
+            <button id="submit-button">Soumettre</button>
+            <button id="skip-image-button">Passer image (-10)</button>
+            <button id="next-film-button" style="display: none;">Film suivant</button>
+        </div>
 
-         <div id="feedback-message" style="
-            margin-top: 15px;
-            padding: 10px;
-            border-radius: 5px;
-            font-weight: bold;
-            display: none; /* Caché par défaut */
-        "></div>
-       
-    <div id="film-reveal-message" style="
-        display: none; /* Caché par défaut */
-        margin-top: 20px;
-        padding: 15px;
-        background-color: #4CAF50; /* Couleur verte pour "correct" */
-        color: white;
-        font-size: 1.5em;
-        font-weight: bold;
-        border-radius: 8px;
-        text-align: center;
-        opacity: 0; /* Pour l'animation de fondu */
-        transition: opacity 0.5s ease-in-out; /* Transition pour l'opacité */
-    ">
-        Réponse : <span id="revealed-film-title"></span>
-    </div>   
-       
-       
-      
-       
-        <input type="text" id="answer-input" placeholder="Tape ta réponse ici">
-        <button id="submit-button">Envoyer</button>
-        <button id="next-film-button" style="display: none; margin-top: 20px; background-color: var(--secondary-color); color: var(--dark-bg);">Passer au film suivant</button>
-        <button id="skip-image-button" style="display: none; margin-top: 20px; background-color: #f44336; color: white;">Passer l'image</button>
+        <div id="film-reveal-message" style="display: none;">
+            <p>Le film était :</p>
+            <h2 id="revealed-film-title"></h2>
+        </div>
     </div>
 
-
-
-    <div id="host-live-feedback" style="
-        display: none; /* Caché par défaut */
-        position: fixed; /* Position fixe pour qu'il ne bouge pas en scrollant */
-        bottom: 20px; /* 20px du bas de la fenêtre */
-        right: 20px; /* 20px de la droite de la fenêtre */
-        width: 300px; /* Largeur du panneau */
-        max-height: 40vh; /* Hauteur maximale pour éviter qu'il ne soit trop grand */
-        background-color: rgba(56, 60, 68, 0.9); /* Fond semi-transparent */
-        border-radius: 8px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-        padding: 15px;
-        color: white;
-        z-index: 1000; /* Assure qu'il est au-dessus des autres éléments */
-        overflow-y: auto; /* Ajoute une barre de défilement si le contenu dépasse */
-        border: 1px solid #61dafb;
-    ">
-        <h3>Réponses en direct (Hôte seulement)</h3>
-        <ul id="live-answers-list" style="list-style: none; padding: 0; margin: 0;">
-            </ul>
+    <div class="container" id="game-over-screen">
+        <h1>Partie Terminée !</h1>
+        <h2>Scores Finaux :</h2>
+        <ul id="final-score-list"></ul>
+        <button id="restart-game-button">Rejouer</button>
     </div>
 
-
-    
-    <audio id="soundCorrect" src="/sounds/correct_answer.wav" preload="auto" volume="0.4"></audio>
-    <audio id="soundWrong" src="/sounds/wrong_answer.mp3" preload="auto" volume="0.4"></audio>
-    <div id="lobby-container" class="active">
-    
     <script src="/socket.io/socket.io.js"></script>
-<script>
-    const socket = io();
 
-    // ====================================================================
-    // --- Éléments du DOM (mis à jour avec tes IDs) ---
-    // ====================================================================
-    const lobbyContainer = document.getElementById('lobby-container');
-    const gameContainer = document.getElementById('game-container');
-    const finalResultsContainer = document.getElementById('final-results-container');
-    const pseudoInput = document.getElementById('pseudo-input');
-    const setPseudoButton = document.getElementById('join-lobby-button'); // Correspond à ton ID HTML
-    const playerListUl = document.getElementById('player-list');
-    const startGameButton = document.getElementById('start-game-button');
-    
-    const filmImage = document.getElementById('film-image');
-    const timerDisplay = document.getElementById('timer'); // Ton span ID est 'timer'
-    const pointsDisplay = document.getElementById('points-display'); // L'élément que tu dois ajouter
-    const answerInput = document.getElementById('answer-input');
-    const submitButton = document.getElementById('submit-button');
-    const gameMessages = document.getElementById('feedback-message'); // Ton ID HTML pour les messages de feedback
-    const scoreListUl = document.getElementById('score-list'); // Pour la liste des scores en jeu
+    <script>
+        // --- DÉCLARATION DES VARIABLES GLOBALES ---
+        // Elles sont déclarées ici mais initialisées APRÈS DOMContentLoaded
+        let socket;
+        let isHost = false;
+        let pseudo = '';
+        let roomId = '';
 
-    const filmRevealMessage = document.getElementById('film-reveal-message');
-    const revealedFilmTitle = document.getElementById('revealed-film-title'); // Ton span ID
-    const nextFilmButton = document.getElementById('next-film-button');
-    const skipImageButton = document.getElementById('skip-image-button');
+        // Références aux éléments du DOM
+        let lobbyContainer;
+        let gameContainer;
+        let pseudoInput;
+        let setPseudoButton;
+        let createRoomButton;
+        let joinRoomButton;
+        let roomInput;
+        let playerList;
+        let roomCodeDisplay;
+        let startGameButton;
+        let filmImage;
+        let timerDisplay;
+        let pointsDisplay;
+        let answerInput;
+        let submitButton;
+        let feedbackMessage;
+        let skipImageButton;
+        let nextFilmButton;
+        let filmRevealMessage;
+        let revealedFilmTitle;
+        let gameOverScreen;
+        let finalScoreList;
+        let restartGameButton;
+        let hostMessage; // Assurez-vous d'avoir <p id="host-message"></p> dans votre HTML
 
-    const gameOverScreen = document.getElementById('final-results-container'); // Réutilise ton conteneur existant
-    const finalScoresList = document.getElementById('final-score-list'); // Ton ID HTML pour la liste des scores finaux
-    const restartGameButton = document.getElementById('restart-game-button');
+        // --- ÉVÉNEMENT DOMContentLoaded : ASSIGNATION DES RÉFÉRENCES ET DÉFINITION DES LISTENERS/FONCTIONS ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- ASSIGNATION DES VARIABLES (maintenant que le DOM est chargé) ---
+            lobbyContainer = document.getElementById('lobby-container');
+            gameContainer = document.getElementById('game-container');
+            pseudoInput = document.getElementById('pseudo-input');
+            setPseudoButton = document.getElementById('set-pseudo-button');
+            createRoomButton = document.getElementById('create-room-button');
+            joinRoomButton = document.getElementById('join-room-button');
+            roomInput = document.getElementById('room-input');
+            playerList = document.getElementById('player-list');
+            roomCodeDisplay = document.getElementById('room-code-display');
+            startGameButton = document.getElementById('start-game-button');
+            filmImage = document.getElementById('film-image');
+            timerDisplay = document.getElementById('timer-display');
+            pointsDisplay = document.getElementById('points-display');
+            answerInput = document.getElementById('answer-input');
+            submitButton = document.getElementById('submit-button');
+            feedbackMessage = document.getElementById('feedback-message');
+            skipImageButton = document.getElementById('skip-image-button');
+            nextFilmButton = document.getElementById('next-film-button');
+            filmRevealMessage = document.getElementById('film-reveal-message');
+            revealedFilmTitle = document.getElementById('revealed-film-title');
+            gameOverScreen = document.getElementById('game-over-screen');
+            finalScoreList = document.getElementById('final-score-list');
+            restartGameButton = document.getElementById('restart-game-button');
+            hostMessage = document.getElementById('host-message');
 
-    const hostLiveFeedback = document.getElementById('host-live-feedback');
-    const liveAnswersDisplay = document.getElementById('live-answers-list'); // Ton ID HTML pour la liste des réponses
+            // --- CONNEXION SOCKET.IO ---
+            socket = io();
 
-    // Audio elements
-    const soundCorrect = document.getElementById('soundCorrect');
-    const soundWrong = document.getElementById('soundWrong');
+            // --- FONCTIONS QUI INTERAGISSENT AVEC LE DOM ---
+            function showLobby() {
+                lobbyContainer.style.display = 'block';
+                gameContainer.style.display = 'none';
+                gameOverScreen.style.display = 'none';
+                filmRevealMessage.style.display = 'none';
+                console.log("Écran du lobby affiché.");
+            }
 
-    // ====================================================================
-    // --- Variables d'état du client ---
-    // ====================================================================
-    let isHost = false;
-    let hasFoundFilmThisRound = false;
-    let currentTimerClient = 0;
-    let timerIntervalClient;
+            function showGame() {
+                lobbyContainer.style.display = 'none';
+                gameContainer.style.display = 'block';
+                filmRevealMessage.style.display = 'none';
+                gameOverScreen.style.display = 'none';
+                // Assurez-vous que gameMessages (si utilisé) est géré
+                // let gameMessages = document.getElementById('game-messages'); // Si vous l'utilisez, décommentez et déclarez en haut
+                // if (gameMessages) gameMessages.style.display = 'none'; // Exemple de gestion
 
-    // ====================================================================
-    // --- Fonctions utilitaires d'affichage de l'interface ---
-    // ====================================================================
-    function showLobby() {
-        lobbyContainer.style.display = 'block';
-        gameContainer.style.display = 'none';
-        filmRevealMessage.style.display = 'none';
-        gameOverScreen.style.display = 'none';
-        startGameButton.style.display = 'none';
-        nextFilmButton.style.display = 'none';
-        skipImageButton.style.display = 'none';
-        restartGameButton.style.display = 'none';
-        hostLiveFeedback.style.display = 'none';
-        gameMessages.style.display = 'none'; // Cache les messages
-        gameMessages.textContent = '';
-        answerInput.disabled = false; // Réactive au retour au lobby
-        submitButton.disabled = false;
-        pseudoInput.disabled = false;
-        setPseudoButton.disabled = false;
-        // Réinitialise l'input du pseudo pour une nouvelle connexion
-        pseudoInput.value = '';
-        document.getElementById('lobby-input-area').innerHTML = `
-            <input type="text" id="pseudo-input" placeholder="Choisis ton pseudo">
-            <button id="join-lobby-button">Rejoindre</button>
-        `;
-        // Ré-attache l'écouteur pour le bouton de pseudo
-        document.getElementById('join-lobby-button').addEventListener('click', handleSetPseudo);
-        pseudoInput.addEventListener('keypress', handlePseudoKeyPress);
-    }
+                filmImage.style.display = 'block'; // <--- Gardez cette ligne !
+                filmImage.style.opacity = '0'; // Initialement transparent
+                
+                answerInput.style.display = 'inline-block';
+                submitButton.style.display = 'inline-block';
+                nextFilmButton.style.display = 'none';
+                skipImageButton.style.display = 'inline-block';
+                
+                console.log("DEBUG: Dans showGame(), filmImage.style.display mis à 'block'");
+            }
 
-   function showGame() {
-    lobbyContainer.style.display = 'none';
-    gameContainer.style.display = 'block';
-    filmRevealMessage.style.display = 'none';
-    gameOverScreen.style.display = 'none';
-    gameMessages.style.display = 'none';
-
-    // Assurez-vous que l'image est affichée mais transparente initialement
-    filmImage.style.display = 'block'; // <--- Assurez-vous que cette ligne est bien là
-    console.log("DEBUG: Dans showGame(), filmImage.style.display mis à 'block'"); // NOUVEAU LOG
-    filmImage.style.opacity = '0'; // L'opacité sera gérée par 'display image'
-
-    // Cacher les boutons de réponse et de film suivant au démarrage du jeu
-    answerInput.style.display = 'inline-block'; // Afficher l'input de réponse
-    submitButton.style.display = 'inline-block'; // Afficher le bouton soumettre
-    nextFilmButton.style.display = 'none'; // Cacher le bouton 'Film Suivant'
-    skipImageButton.style.display = 'inline-block'; // Afficher le bouton 'Passer image' (si nécessaire)
-}
-
-    function showFilmReveal(title) {
-        gameContainer.style.display = 'none'; // Cache l'interface de jeu principale
-        filmRevealMessage.style.display = 'block';
-        revealedFilmTitle.textContent = title;
-        setTimeout(() => { filmRevealMessage.style.opacity = 1; }, 50);
-        answerInput.disabled = true;
-        submitButton.disabled = true;
-        skipImageButton.style.display = 'none';
-        clearInterval(timerIntervalClient); // Arrête le minuteur
-        timerDisplay.textContent = '0'; // Affiche 0
-    }
-
-    function showGameOver(finalScores) {
-        gameContainer.style.display = 'none';
-        filmRevealMessage.style.display = 'none';
-        gameOverScreen.style.display = 'block'; // Utilise ton conteneur existant
-        hostLiveFeedback.style.display = 'none'; // Masquer pour la fin du jeu
-        skipImageButton.style.display = 'none';
-        nextFilmButton.style.display = 'none'; // Ne pas montrer en fin de partie
-
-        finalScoresList.innerHTML = ''; // Nettoie la liste
-        if (finalScores && finalScores.length > 0) {
-            // Trie les scores pour afficher le gagnant en premier
-            const sortedScores = finalScores.sort((a, b) => b.score - a.score);
-            sortedScores.forEach((player, index) => {
-                const li = document.createElement('li');
-                li.textContent = `${index + 1}. ${player.pseudo}: ${player.score} points`;
-                if (index === 0) { // Si c'est le premier (le gagnant)
-                    li.classList.add('winner'); // Tu peux ajouter un style CSS pour cette classe
+            // --- ÉCOUTEURS D'ÉVÉNEMENTS (addEventListener) ---
+            setPseudoButton.addEventListener('click', () => {
+                pseudo = pseudoInput.value.trim();
+                if (pseudo) {
+                    socket.emit('set pseudo', pseudo);
+                    pseudoInput.disabled = true;
+                    setPseudoButton.disabled = true;
+                    createRoomButton.style.display = 'inline-block';
+                    joinRoomButton.style.display = 'inline-block';
+                    roomInput.style.display = 'inline-block';
+                    console.log(`Pseudo défini : ${pseudo}`);
+                } else {
+                    alert("Veuillez entrer un pseudo !");
                 }
-                finalScoresList.appendChild(li);
             });
-        } else {
-            const li = document.createElement('li');
-            li.textContent = "Aucun score disponible.";
-            finalScoresList.appendChild(li);
-        }
 
-        if (isHost) {
-            restartGameButton.style.display = 'block';
-        }
-    }
+            createRoomButton.addEventListener('click', () => {
+                socket.emit('create room', pseudo);
+                createRoomButton.style.display = 'none';
+                joinRoomButton.style.display = 'none';
+                roomInput.style.display = 'none';
+                console.log("Demande de création de salle envoyée.");
+            });
 
-    function displayGameMessage(message, type = 'info') {
-        gameMessages.textContent = message;
-        gameMessages.style.display = 'block'; // Assure que le message est visible
-        gameMessages.classList.remove('correct', 'incorrect'); // Nettoie les classes précédentes
+            joinRoomButton.addEventListener('click', () => {
+                roomId = roomInput.value.trim();
+                if (roomId) {
+                    socket.emit('join room', roomId, pseudo);
+                    createRoomButton.style.display = 'none';
+                    joinRoomButton.style.display = 'none';
+                    roomInput.style.display = 'none';
+                    console.log(`Demande de rejoindre la salle ${roomId} envoyée.`);
+                } else {
+                    alert("Veuillez entrer un code de salle !");
+                }
+            });
 
-        // Applique la couleur appropriée
-        if (type === 'success') {
-            gameMessages.style.backgroundColor = '#4CAF50';
-            gameMessages.style.color = 'white';
-            gameMessages.classList.add('correct');
-        } else if (type === 'error') {
-            gameMessages.style.backgroundColor = '#f44336';
-            gameMessages.style.color = 'white';
-            gameMessages.classList.add('incorrect');
-        } else { // info ou autre
-            gameMessages.style.backgroundColor = 'transparent'; // Pour ne pas masquer le fond
-            gameMessages.style.color = 'white';
-        }
+            startGameButton.addEventListener('click', () => {
+                if (isHost) {
+                    socket.emit('start game');
+                }
+            });
 
-        // Ajoute la classe 'show' pour la transition CSS si tu en as une
-        setTimeout(() => {
-            gameMessages.classList.add('show');
-        }, 10); // Petit délai pour que la transition s'active
+            nextFilmButton.addEventListener('click', () => {
+                if (isHost) {
+                    socket.emit('request next film');
+                    nextFilmButton.style.display = 'none';
+                    answerInput.style.display = 'inline-block'; // Réafficher l'input et le bouton
+                    submitButton.style.display = 'inline-block';
+                }
+            });
 
-        // Masque le message après un délai
-        setTimeout(() => {
-            gameMessages.classList.remove('show');
-            setTimeout(() => {
-                gameMessages.style.display = 'none';
-                gameMessages.textContent = '';
-            }, 400); // Correspond à la durée de la transition de masquage
-        }, 2000); // Afficher pendant 2 secondes
-    }
+            skipImageButton.addEventListener('click', () => {
+                if (isHost) {
+                    socket.emit('skip current image');
+                    skipImageButton.style.display = 'none'; // Cache le bouton après l'action
+                }
+            });
 
-    // Fonction utilitaire pour jouer un son
-    function playSound(audioElement) {
-        if (audioElement) {
-            audioElement.currentTime = 0; // Rembobine le son au début
-            const playPromise = audioElement.play();
-            if (playPromise !== undefined) {
-                playPromise.then(_ => { /* Lecture réussie */ })
-                .catch(error => { console.warn("La lecture audio a été bloquée :", error); });
-            }
-        }
-    }
+            restartGameButton.addEventListener('click', () => {
+                if (isHost) {
+                    socket.emit('host restart game');
+                    gameOverScreen.style.display = 'none'; // Cache l'écran des résultats
+                    // Le serveur va renvoyer au lobby
+                }
+            });
 
-    // Empêche le clic droit sur toute la page
-    document.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        console.log("Le clic droit est désactivé sur cette page pour des raisons de jeu anti-triche.");
-    });
-    filmImage.addEventListener('contextmenu', (e) => { e.preventDefault(); });
+            // Gérer l'envoi de pseudo avec la touche Entrée
+            pseudoInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    setPseudoButton.click();
+                }
+            });
 
-    // ====================================================================
-    // --- Gestion des événements Socket.IO ---
-    // ====================================================================
+            // Gérer l'envoi de réponse avec la touche Entrée
+            answerInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    submitButton.click();
+                }
+            });
+            
+            submitButton.addEventListener('click', () => {
+                const userAnswer = answerInput.value.trim();
+                if (userAnswer !== "") {
+                    console.log(`Tentative de réponse : ${userAnswer}`);
+                    socket.emit('submit answer', userAnswer);
+                } else {
+                    alert("Veuillez taper une réponse !");
+                }
+            });
 
-    // Initialisation
-    document.addEventListener('DOMContentLoaded', showLobby); // Afficher le lobby au chargement
 
-    socket.on('connect', () => {
-        console.log('Connecté au serveur Socket.IO');
-    });
+            // --- ÉCOUTEURS D'ÉVÉNEMENTS SOCKET.IO ---
+            socket.on('connect', () => {
+                console.log("Connecté au serveur Socket.IO");
+                // Gérer les cas où un joueur se reconnecte dans une salle existante
+                // if (roomId && pseudo) {
+                //     socket.emit('rejoin room', roomId, pseudo);
+                // } else {
+                //     showLobby();
+                // }
+            });
 
-    socket.on('host connected', () => {
-        isHost = true;
-        console.log("Vous êtes l'hôte.");
-        startGameButton.style.display = 'block';
-    });
+            socket.on('is host', () => {
+                console.log("Vous êtes l'hôte.");
+                isHost = true;
+            });
 
-    socket.on('pseudo accepted', () => {
-        displayGameMessage('Pseudo accepté ! En attente du début de partie...', 'success');
-        pseudoInput.disabled = true;
-        setPseudoButton.disabled = true;
-        document.getElementById('lobby-input-area').innerHTML = `<p>Bienvenue, ${pseudoInput.value.trim()} ! En attente des autres joueurs...</p>`;
-    });
+            socket.on('update lobby', (data) => {
+                console.log('Mise à jour du lobby :', data);
+                roomCodeDisplay.innerHTML = `Code de la salle: <strong>${data.roomId}</strong>`;
+                playerList.innerHTML = ''; // Efface la liste actuelle
+                data.players.forEach(player => {
+                    const li = document.createElement('li');
+                    li.textContent = `${player.pseudo} (Score: ${player.score})`;
+                    playerList.appendChild(li);
+                });
+                if (data.isHost) { // Affiche le bouton Start Game si l'utilisateur est l'hôte
+                    startGameButton.style.display = 'block';
+                    hostMessage.style.display = 'block';
+                } else {
+                    startGameButton.style.display = 'none';
+                    hostMessage.style.display = 'none';
+                }
+                showLobby(); // S'assure que le lobby est affiché
+            });
 
-    socket.on('pseudo taken', (message) => {
-        displayGameMessage(message, 'error');
-        pseudoInput.value = '';
-    });
+            socket.on('room full', () => {
+                alert("La salle est pleine ou le code est invalide.");
+                showLobby(); // Retourne au lobby si la salle est pleine
+            });
 
-    socket.on('update player list', (players) => {
-        playerListUl.innerHTML = '';
-        players.forEach(pseudo => {
-            const li = document.createElement('li');
-            li.textContent = pseudo;
-            playerListUl.appendChild(li);
+            socket.on('pseudo taken', () => {
+                alert("Ce pseudo est déjà pris dans cette salle ou n'est pas valide.");
+                pseudoInput.disabled = false; // Permettre de changer le pseudo
+                setPseudoButton.disabled = false;
+                createRoomButton.style.display = 'inline-block';
+                joinRoomButton.style.display = 'inline-block';
+                roomInput.style.display = 'inline-block';
+            });
+
+            socket.on('start game', () => {
+                console.log("La partie commence !");
+                showGame();
+            });
+
+            socket.on('display image', (data) => {
+                console.log(`DEBUG: Réception 'display image', URL: ${data.url}`);
+                filmImage.style.display = 'block';
+                console.log("DEBUG: Dans 'display image', filmImage.style.display mis à 'block'");
+                filmImage.style.opacity = '0'; // Initialement transparent pour la transition
+                filmImage.src = data.url;
+                timerDisplay.textContent = `Temps restant : ${data.initialTime}s`;
+                pointsDisplay.textContent = `Points par bonne réponse : ${data.points}`;
+                feedbackMessage.textContent = ''; // Efface les messages précédents
+
+                // Réinitialiser les boutons après un changement d'image
+                answerInput.style.display = 'inline-block'; // Afficher l'input de réponse
+                submitButton.style.display = 'inline-block'; // Afficher le bouton soumettre
+                nextFilmButton.style.display = 'none'; // Cacher le bouton 'Film Suivant'
+                skipImageButton.style.display = 'inline-block'; // Afficher le bouton 'Passer image' (si nécessaire)
+
+
+                // Animation de fondu :
+                setTimeout(() => {
+                    filmImage.style.opacity = '1'; // Rend l'image visible
+                    console.log("DEBUG: Après setTimeout, filmImage.style.opacity mis à '1'");
+                }, 50); // Petite latence pour s'assurer que le navigateur a mis à jour le src
+            });
+
+            socket.on('timer update', (data) => {
+                timerDisplay.textContent = `Temps restant : ${data.timeLeft}s`;
+            });
+
+            socket.on('answer result', (data) => {
+                console.log(`Résultat de la réponse : ${data.correct}`);
+                feedbackMessage.textContent = data.message;
+                if (data.correct) {
+                    feedbackMessage.className = 'correct';
+                    answerInput.value = ''; // Efface l'input après une bonne réponse
+                } else {
+                    feedbackMessage.className = 'incorrect';
+                }
+                // Désactiver l'input et le bouton si la réponse est correcte ou si le joueur a déjà trouvé
+                if (data.correct || data.foundFilmThisRound) {
+                    answerInput.disabled = true;
+                    submitButton.disabled = true;
+                } else {
+                    answerInput.disabled = false;
+                    submitButton.disabled = false;
+                }
+            });
+
+            socket.on('reveal film', (data) => {
+                console.log(`DEBUG: Réception 'reveal film', titre révélé: ${data.revealedTitle}`);
+                filmImage.style.opacity = '0'; // Cache l'image visuellement
+                
+                setTimeout(() => {
+                    filmImage.style.display = 'none'; // Cache l'image complètement
+                    console.log("DEBUG: Dans 'reveal film', filmImage.style.display mis à 'none'");
+                    revealedFilmTitle.textContent = data.revealedTitle;
+                    filmRevealMessage.style.opacity = '1';
+                    filmRevealMessage.style.display = 'block'; // Affiche le message de révélation
+                    
+                    answerInput.style.display = 'none'; // Masquer les éléments de réponse
+                    submitButton.style.display = 'none';
+                    skipImageButton.style.display = 'none'; // Cacher le bouton 'Passer image'
+
+                    if (isHost) { // Seul l'hôte voit le bouton pour passer au film suivant
+                        nextFilmButton.style.display = 'block';
+                    }
+                }, 500); // Délai pour la transition d'opacité
+            });
+
+            socket.on('game over', (finalScores) => {
+                console.log(`DEBUG: Réception 'game over', scores finaux:`, finalScores);
+                gameContainer.style.display = 'none';
+                filmRevealMessage.style.display = 'none';
+                gameOverScreen.style.display = 'block';
+                finalScoreList.innerHTML = '';
+                const sortedScores = finalScores.sort((a, b) => b.score - a.score);
+
+                sortedScores.forEach(player => {
+                    const li = document.createElement('li');
+                    li.textContent = `${player.pseudo}: ${player.score} points`;
+                    finalScoreList.appendChild(li);
+                });
+
+                if (isHost) {
+                    restartGameButton.style.display = 'block';
+                } else {
+                    restartGameButton.style.display = 'none';
+                }
+                console.log("Écran des résultats finaux affiché.");
+            });
+            
+            // --- Appel initial pour afficher le lobby au chargement de la page ---
+            showLobby(); 
         });
-    });
-
-    socket.on('update scores', (scores) => {
-        scoreListUl.innerHTML = '';
-        scores.forEach(player => {
-            const li = document.createElement('li');
-            li.textContent = `${player.pseudo}: ${player.score}`;
-            scoreListUl.appendChild(li);
-        });
-    });
-
-    socket.on('game started', () => {
-        displayGameMessage('La partie a commencé !', 'info');
-        showGame();
-        hasFoundFilmThisRound = false;
-        liveAnswersDisplay.innerHTML = ''; // Nettoie les réponses live au début d'une nouvelle partie
-    });
-
-    socket.on('display image', (data) => {
-    console.log(`DEBUG: Réception 'display image', URL: ${data.url}`); // NOUVEAU LOG
-
-    // Assurez-vous que l'image est visible (mais transparente au début de la transition)
-    filmImage.style.display = 'block'; // <--- Ajoutez ou assurez-vous de cette ligne ici
-    console.log("DEBUG: Dans 'display image', filmImage.style.display mis à 'block'"); // NOUVEAU LOG
-    filmImage.style.opacity = '0'; // Cache l'image pendant le changement
-
-    filmImage.src = data.url; // Met à jour la source de l'image
-    timerDisplay.textContent = `Temps restant : ${data.initialTime}s`;
-    pointsDisplay.textContent = `Points par bonne réponse : ${data.points}`;
-    feedbackMessage.textContent = ''; // Efface les messages précédents
-
-    // Réinitialiser les boutons après un changement d'image
-    answerInput.style.display = 'inline-block'; // Afficher l'input de réponse
-    submitButton.style.display = 'inline-block'; // Afficher le bouton soumettre
-    nextFilmButton.style.display = 'none'; // Cacher le bouton 'Film Suivant'
-    skipImageButton.style.display = 'inline-block'; // Afficher le bouton 'Passer image' (si nécessaire)
-
-    // Animation de fondu :
-    // Un petit délai pour s'assurer que le navigateur a mis à jour le src
-    // avant de démarrer la transition d'opacité.
-    setTimeout(() => {
-        filmImage.style.opacity = '1'; // Rend l'image visible
-    }, 50); // Petite latence pour l'opacité
-});
-
-    socket.on('timer update', (timeLeft) => {
-        timerDisplay.textContent = `${timeLeft}`;
-        currentTimerClient = timeLeft;
-    });
-
-    socket.on('timer expired', () => {
-        clearInterval(timerIntervalClient);
-        timerDisplay.textContent = "Temps écoulé !";
-        answerInput.disabled = true;
-        submitButton.disabled = true;
-        displayGameMessage('Temps écoulé !', 'info');
-    });
-
-    socket.on('answer result', (data) => {
-        displayGameMessage(data.message, data.correct ? 'success' : 'error');
-        if (data.correct) {
-            playSound(soundCorrect);
-            answerInput.disabled = true;
-            submitButton.disabled = true;
-            hasFoundFilmThisRound = true;
-        } else {
-            playSound(soundWrong);
-            // Si la réponse est fausse, on désactive l'input pour cette manche (une seule tentative)
-            answerInput.disabled = true;
-            submitButton.disabled = true;
-        }
-    });
-    
-    socket.on('live answer', (data) => {
-        if (isHost) {
-            const li = document.createElement('li');
-            li.textContent = `${data.pseudo}: ${data.answer}`;
-            liveAnswersDisplay.prepend(li);
-            // Limiter la taille de la liste des réponses en direct
-            const maxMessages = 10;
-            while (liveAnswersDisplay.children.length > maxMessages) {
-                liveAnswersDisplay.removeChild(liveAnswersDisplay.lastChild);
-            }
-            hostLiveFeedback.style.display = 'block'; // S'assurer que c'est visible
-        }
-    });
-
-    socket.on('reveal film', (data) => {
-    console.log(`DEBUG: Réception 'reveal film', titre révélé: ${data.revealedTitle}`); // NOUVEAU LOG    
-    console.log(`Le film était : ${data.revealedTitle}`);
-    console.log(`Scores des joueurs :`, data.scores);
-    filmImage.style.opacity = '0'; // Cache l'image
-    // Après un court délai, cacher l'image complètement et afficher le message
-    setTimeout(() => {
-        filmImage.style.display = 'none'; // Cache l'image complètement
-        console.log("DEBUG: Dans 'reveal film', filmImage.style.display mis à 'none'"); // NOUVEAU LOG
-        revealedFilmTitle.textContent = data.revealedTitle; // Affiche le titre
-        filmRevealMessage.style.opacity = '1';
-        filmRevealMessage.style.display = 'block'; // Affiche le message de révélation
-        // Masquer les boutons de réponse et le champ de texte
-        answerInput.style.display = 'none';
-        submitButton.style.display = 'none';
-        skipImageButton.style.display = 'none'; // Cacher le bouton 'Passer image'
-
-        // Afficher le bouton "Film suivant" seulement pour l'hôte après révélation
-        if (isHost) {
-            nextFilmButton.style.display = 'block';
-        }
-    }, 500); // Délai avant de cacher l'image et d'afficher le message de révélation
-    // ...
-});
-
-    socket.on('game over', (finalScores) => {
-        showGameOver(finalScores);
-    });
-
-    socket.on('return to lobby', () => {
-        showLobby();
-        console.log("Retour au lobby.");
-    });
-
-    // ====================================================================
-    // --- Gestion des clics sur les boutons ---
-    // ====================================================================
-
-    function handleSetPseudo() {
-        const pseudo = pseudoInput.value.trim();
-        if (pseudo) {
-            socket.emit('set pseudo', pseudo);
-        } else {
-            displayGameMessage('Veuillez entrer un pseudo valide.', 'error');
-        }
-    }
-    setPseudoButton.addEventListener('click', handleSetPseudo);
-
-    function handleSubmitAnswer() {
-        const answer = answerInput.value.trim();
-        if (answer && !answerInput.disabled) {
-            socket.emit('submit answer', answer);
-        } else {
-            displayGameMessage("Veuillez taper une réponse !", 'info');
-        }
-    }
-    submitButton.addEventListener('click', handleSubmitAnswer);
-
-    startGameButton.addEventListener('click', () => {
-        if (isHost) {
-            socket.emit('start game');
-        }
-    });
-
-    nextFilmButton.addEventListener('click', () => {
-        if (isHost) {
-            socket.emit('request next film');
-            nextFilmButton.style.display = 'none';
-            answerInput.style.display = 'inline-block'; // Réafficher l'input et le bouton
-            submitButton.style.display = 'inline-block';
-        }
-    });
-
-    skipImageButton.addEventListener('click', () => {
-        if (isHost) {
-            socket.emit('skip current image');
-            skipImageButton.style.display = 'none'; // Cache le bouton après l'action
-        }
-    });
-
-    restartGameButton.addEventListener('click', () => {
-        if (isHost) {
-            socket.emit('host restart game');
-            gameOverScreen.style.display = 'none'; // Cache l'écran des résultats
-            // Le serveur va renvoyer au lobby
-        }
-    });
-
-    // Gérer l'envoi de pseudo avec la touche Entrée
-    function handlePseudoKeyPress(e) {
-        if (e.key === 'Enter') {
-            setPseudoButton.click();
-        }
-    }
-    pseudoInput.addEventListener('keypress', handlePseudoKeyPress);
-
-    // Gérer l'envoi de réponse avec la touche Entrée
-    answerInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !answerInput.disabled) {
-            submitButton.click();
-        }
-    });
-
-</script>
+    </script>
 </body>
 </html>
